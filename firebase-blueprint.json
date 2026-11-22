@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "SvvProduct": {
+      "title": "SvvProduct",
+      "description": "Luxury fashion catalog item managed by the SVV SHOP administrator.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brand": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "price": { "type": "number" },
+        "availability": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "imageUrl": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "sizes": { "type": "array" },
+        "composition": { "type": "string", "maxLength": 200 },
+        "origin": { "type": "string", "maxLength": 80 },
+        "stylistNote": { "type": "string", "maxLength": 400 },
+        "pairingTip": { "type": "string", "maxLength": 300 },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": [
+        "id",
+        "brand",
+        "category",
+        "name",
+        "price",
+        "availability",
+        "imageUrl",
+        "sizes",
+        "composition",
+        "origin",
+        "stylistNote",
+        "pairingTip",
+        "order",
+        "createdAt",
+        "updatedAt",
+        "updatedByUid"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Explicit administrator record for SVV SHOP.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/svvProducts/{productId}": {
+      "schema": { "$ref": "#/entities/SvvProduct" },
+      "description": "Luxury fashion items editable by admin and publicly readable by shoppers."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Explicit administrator privileges."
+    }
+  }
+}

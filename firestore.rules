@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrapAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'osigur462@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() ||
+        (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isValidSvvProduct(data, productId) {
+      return data.keys().hasAll([
+          'id', 'brand', 'category', 'name', 'price', 'availability',
+          'imageUrl', 'sizes', 'composition', 'origin', 'stylistNote',
+          'pairingTip', 'order', 'createdAt', 'updatedAt', 'updatedByUid'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'brand', 'category', 'name', 'price', 'availability',
+          'imageUrl', 'sizes', 'composition', 'origin', 'stylistNote',
+          'pairingTip', 'order', 'createdAt', 'updatedAt', 'updatedByUid'
+        ]) &&
+        data.id is string && data.id == productId && isValidId(data.id) &&
+        data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 80 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 140 &&
+        data.price is number && data.price >= 0 && data.price <= 100000000 &&
+        data.availability is string && data.availability.size() >= 1 && data.availability.size() <= 60 &&
+        data.imageUrl is string && data.imageUrl.size() >= 1 && data.imageUrl.size() <= 500 &&
+        data.sizes is list && data.sizes.size() >= 1 && data.sizes.size() <= 10 &&
+        data.sizes[0] is string &&
+        data.composition is string && data.composition.size() <= 200 &&
+        data.origin is string && data.origin.size() <= 80 &&
+        data.stylistNote is string && data.stylistNote.size() <= 400 &&
+        data.pairingTip is string && data.pairingTip.size() <= 300 &&
+        data.order is number && data.order >= 0 && data.order <= 10000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time &&
+        data.updatedByUid is string && data.updatedByUid == request.auth.uid;
+    }
+
+    match /svvProducts/{productId} {
+      allow get: if isValidId(productId);
+      allow list: if true;
+      allow create: if isAdmin() && isValidId(productId) && isValidSvvProduct(incoming(), productId) &&
+        incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(productId) && isValidSvvProduct(incoming(), productId) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().id == existing().id;
+      allow delete: if isAdmin() && isValidId(productId);
+    }
+
+    match /admins/{uid} {
+      allow get: if isVerifiedUser() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+      allow list: if false;
+      allow create, update, delete: if isBootstrapAdmin() && isValidId(uid);
+    }
+  }
+}
