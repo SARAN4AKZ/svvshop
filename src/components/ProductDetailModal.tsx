@@ -64,7 +64,7 @@ export function ProductDetailModal({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 sm:p-6">
           <div className="aspect-[3/4] rounded-2xl overflow-hidden bg-[var(--svv-well)] border border-[var(--svv-border)]">
-            {!imgError ? (
+            {product.imageUrl && !imgError ? (
               <img
                 src={product.imageUrl}
                 alt={`${product.brand} — ${product.name}`}
@@ -73,8 +73,15 @@ export function ProductDetailModal({
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center p-6 text-center text-[var(--svv-text)]">
-                <span className="text-lg font-semibold">{product.name}</span>
+              <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-br from-[var(--svv-surface-2)] to-[var(--svv-surface)]">
+                <span className="text-xs font-mono uppercase tracking-widest text-[var(--svv-muted)]">
+                  {product.brand}
+                </span>
+                <span className="my-2 font-display italic text-4xl font-black text-[var(--svv-muted)] opacity-35 leading-none">
+                  †
+                </span>
+                <span className="text-base font-semibold text-[var(--svv-text)]">{product.name}</span>
+                <span className="mt-1.5 text-xs text-[var(--svv-muted)]">Живые фото у @SVV_manager</span>
               </div>
             )}
           </div>

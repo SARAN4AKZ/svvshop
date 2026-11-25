@@ -252,7 +252,9 @@ export interface HeroBannerConfig {
   imageUrl: string;
 }
 
-export const LUXURY_PRODUCTS: LuxuryProduct[] = [];
+import { IMPORTED_SVV_PRODUCTS } from './importedCatalog';
+
+export const LUXURY_PRODUCTS: LuxuryProduct[] = IMPORTED_SVV_PRODUCTS;
 
 export const MANAGER_TELEGRAM_HANDLE = '@SVV_manager';
 export const CREATOR_TELEGRAM_HANDLE = '@demnagvasali';

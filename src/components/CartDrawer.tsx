@@ -316,12 +316,23 @@ export function CartDrawer({
                   if (!product) return null;
                   return (
                     <li key={`${item.productId}-${item.size}`} className="py-3.5 first:pt-0 flex gap-3.5">
-                      <img
-                        src={product.imageUrl}
-                        alt={product.name}
-                        referrerPolicy="no-referrer"
-                        className="w-16 h-20 rounded-xl object-cover bg-[var(--svv-well)] shrink-0"
-                      />
+                      {product.imageUrl ? (
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          referrerPolicy="no-referrer"
+                          className="w-16 h-20 rounded-xl object-cover bg-[var(--svv-well)] shrink-0"
+                        />
+                      ) : (
+                        <div className="w-16 h-20 rounded-xl bg-[var(--svv-surface-2)] border border-[var(--svv-border)] shrink-0 flex flex-col items-center justify-center p-1 text-center">
+                          <span className="font-display italic text-base font-black text-[var(--svv-muted)] opacity-50 leading-none">
+                            †
+                          </span>
+                          <span className="mt-1 text-[8px] font-mono uppercase text-[var(--svv-muted)] truncate max-w-full">
+                            {product.brand}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <span className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--svv-muted)]">
                           {product.brand}

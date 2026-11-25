@@ -27,7 +27,7 @@ export function ProductCard({
           aria-label={`Открыть ${product.brand} ${product.name}`}
           className="block w-full h-full cursor-pointer text-left"
         >
-          {!imgError ? (
+          {product.imageUrl && !imgError ? (
             <img
               src={product.imageUrl}
               alt={`${product.brand} — ${product.name}`}
@@ -37,8 +37,16 @@ export function ProductCard({
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center p-4 text-center bg-[var(--svv-surface-2)]">
-              <span className="text-xs font-semibold text-[var(--svv-text)]">{product.name}</span>
+            <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center bg-gradient-to-br from-[var(--svv-surface-2)] to-[var(--svv-surface)]">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--svv-muted)]">
+                {product.brand}
+              </span>
+              <span className="my-1.5 font-display italic text-2xl font-black text-[var(--svv-muted)] opacity-40 leading-none">
+                †
+              </span>
+              <span className="text-[11px] font-medium text-[var(--svv-text-soft)] line-clamp-2 max-w-[90%]">
+                {product.category}
+              </span>
             </div>
           )}
           <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/35 to-transparent pointer-events-none" />
@@ -69,12 +77,15 @@ export function ProductCard({
         onClick={() => onOpenDetail(product)}
         className="mt-2.5 text-left cursor-pointer"
       >
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--svv-muted)]">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--svv-muted)] truncate">
           {product.brand}
         </p>
         <h3 className="mt-0.5 text-xs sm:text-sm font-medium text-[var(--svv-text)] leading-snug line-clamp-2">
           {product.name}
         </h3>
+        <p className="mt-0.5 text-[11px] text-[var(--svv-muted)] truncate">
+          Размеры: {product.sizes.join(', ')}
+        </p>
       </button>
     </article>
   );

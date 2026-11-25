@@ -71,29 +71,39 @@ const EMPTY_INBOX_SUMMARY: InboxSummary = {
 };
 
 function mergeCatalogWithServerOverrides(
-  baseList: LuxuryProduct[],
+  builtInList: LuxuryProduct[],
+  cloudList: LuxuryProduct[],
   upserts: LuxuryProduct[],
   deletedIds: string[]
 ): LuxuryProduct[] {
   const deletedSet = new Set(deletedIds);
   const byId = new Map<string, LuxuryProduct>();
+  for (const item of builtInList) {
+    if (!deletedSet.has(item.id)) byId.set(item.id, item);
+  }
   for (const item of upserts) {
     if (!deletedSet.has(item.id)) byId.set(item.id, item);
   }
-  for (const item of baseList) {
+  for (const item of cloudList) {
     byId.set(item.id, item);
   }
   return Array.from(byId.values()).sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
 }
 
 export default function App() {
-  const [baseProducts, setBaseProducts] = useState<LuxuryProduct[]>(LUXURY_PRODUCTS);
+  const [cloudProducts, setCloudProducts] = useState<LuxuryProduct[]>([]);
   const [serverUpserts, setServerUpserts] = useState<LuxuryProduct[]>([]);
   const [serverDeletedIds, setServerDeletedIds] = useState<string[]>([]);
 
   const products = useMemo(
-    () => mergeCatalogWithServerOverrides(baseProducts, serverUpserts, serverDeletedIds),
-    [baseProducts, serverUpserts, serverDeletedIds]
+    () =>
+      mergeCatalogWithServerOverrides(
+        LUXURY_PRODUCTS,
+        cloudProducts,
+        serverUpserts,
+        serverDeletedIds
+      ),
+    [cloudProducts, serverUpserts, serverDeletedIds]
   );
 
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -157,10 +167,10 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'env' | 'claimed' | 'unclaimed'>('unclaimed');
 
   const localOnlyProducts = useMemo(() => {
-    const cloudIds = new Set(baseProducts.map((p) => p.id));
+    const cloudIds = new Set(cloudProducts.map((p) => p.id));
     const deletedSet = new Set(serverDeletedIds);
     return serverUpserts.filter((p) => !cloudIds.has(p.id) && !deletedSet.has(p.id));
-  }, [baseProducts, serverUpserts, serverDeletedIds]);
+  }, [cloudProducts, serverUpserts, serverDeletedIds]);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -287,7 +297,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribeProducts = subscribeCatalogProducts(
       (remoteList) => {
-        setBaseProducts(remoteList);
+        setCloudProducts(remoteList);
       },
       () => {
         // Fallback to local state if Firestore rules/network unavailable
@@ -893,13 +903,6 @@ export default function App() {
     setSearchQuery('');
   };
 
-  const catalogBrandsLine = useMemo(() => {
-    const added = brandOptions.slice(1);
-    return added.length > 0
-      ? `Добавленные бренды: ${added.join(', ')}.`
-      : 'Актуальные позиции каталога SVV SHOP.';
-  }, [brandOptions]);
-
   return (
     <div className="relative min-h-screen bg-[var(--svv-bg)] text-[var(--svv-text)] pb-20 md:pb-8 overflow-x-hidden flex flex-col transition-colors">
       <AmbientBackdrop />
@@ -949,7 +952,7 @@ export default function App() {
                         Каталог SVV † SHOP
                       </h1>
                       <p className="mt-1 text-xs sm:text-sm text-[var(--svv-muted)]">
-                        {catalogBrandsLine}
+                        Актуальные позиции в наличии и под заказ.
                       </p>
                     </div>
 

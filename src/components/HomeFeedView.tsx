@@ -47,24 +47,13 @@ export function HomeFeedView({
   const randomFit = generateRandomFit(products, fitSeed);
   const randomFitTotal = randomFit.reduce((sum, item) => sum + item.price, 0);
 
-  const addedBrands = Array.from(
-    new Set(products.map((p) => p.brand.trim()).filter(Boolean))
-  );
-
   const defaultHeroDescription =
-    addedBrands.length > 0
-      ? `В витрине: ${addedBrands.slice(0, 6).join(', ')} — живые фото от менеджера и доставка по вашему адресу.`
-      : 'Вещи в наличии, прямой выкуп из Китая, живые фото от менеджера и доставка по вашему адресу.';
+    'Вещи в наличии, прямой выкуп из Китая, живые фото от менеджера и доставка по вашему адресу.';
 
   const heroDescription = heroBanner.description.trim() || defaultHeroDescription;
 
   const defaultTickerText =
-    addedBrands.length > 0
-      ? `SVV † SHOP † ${addedBrands
-          .slice(0, 8)
-          .map((b) => b.toUpperCase())
-          .join(' † ')} † ВЫКУП ИЗ КИТАЯ † ДОСТАВКА ПО РФ`
-      : 'SVV † SHOP † ЗАКРЫТАЯ ВИТРИНА † ВЫКУП ИЗ КИТАЯ † ЖИВЫЕ ФОТО ОТ МЕНЕДЖЕРА † ДОСТАВКА ПО РФ И МИРУ';
+    'SVV † SHOP † ЗАКРЫТАЯ ВИТРИНА † ВЫКУП ИЗ КИТАЯ † ЖИВЫЕ ФОТО ОТ МЕНЕДЖЕРА † ДОСТАВКА ПО РФ И МИРУ';
 
   const tickerText = heroBanner.tickerOverride.trim() || defaultTickerText;
 
@@ -371,12 +360,26 @@ export function HomeFeedView({
                   className="text-left group cursor-pointer"
                 >
                   <div className="aspect-[3/4] rounded-xl overflow-hidden bg-[var(--svv-well)] border border-[var(--svv-border)]">
-                    <img
-                      src={item.imageUrl}
-                      alt={item.name}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center p-2.5 text-center bg-gradient-to-br from-[var(--svv-surface-2)] to-[var(--svv-surface)]">
+                        <span className="text-[9px] font-mono uppercase tracking-widest text-[var(--svv-muted)] truncate max-w-full">
+                          {item.brand}
+                        </span>
+                        <span className="my-1 font-display italic text-lg font-black text-[var(--svv-muted)] opacity-40 leading-none">
+                          †
+                        </span>
+                        <span className="text-[10px] font-medium text-[var(--svv-text-soft)] line-clamp-2">
+                          {item.name}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--svv-muted)] truncate">
                     {item.brand}

@@ -1663,12 +1663,18 @@ export function AdminCatalogPanel({
             products.map((item) => (
               <div key={item.id} className="p-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5 min-w-0">
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    referrerPolicy="no-referrer"
-                    className="w-12 h-14 rounded-xl object-cover bg-[var(--svv-well)] shrink-0"
-                  />
+                  {item.imageUrl ? (
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      referrerPolicy="no-referrer"
+                      className="w-12 h-14 rounded-xl object-cover bg-[var(--svv-well)] shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-14 rounded-xl bg-[var(--svv-surface-2)] border border-[var(--svv-border)] shrink-0 flex items-center justify-center font-display italic text-sm font-black text-[var(--svv-muted)] opacity-60">
+                      †
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--svv-muted)]">
                       {item.brand} † {item.category}
