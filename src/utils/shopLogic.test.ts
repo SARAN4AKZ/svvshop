@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CATEGORIES,
   CREATOR_TELEGRAM_HANDLE,
   DEFAULT_HERO_BANNER,
   DEFAULT_PRIZE_WHEEL,
@@ -15,6 +16,10 @@ import {
   calculateChinaBuyoutQuote,
   calculateOrderTotal,
   calculateWheelTargetAngle,
+  CHINA_AIR_SHIPPING_USD,
+  CHINA_BUYOUT_COMMISSION_RATE,
+  CHINA_CARGO_RUB_PER_KG,
+  CHINA_CNY_RATE,
   countNewAdminRequests,
   createSafeProductId,
   extractUniqueBrands,
@@ -29,6 +34,8 @@ import {
   getNextTheme,
   getRequestStatusLabel,
   getThemeLabel,
+  getTrackingStageIndex,
+  getTrackingStageLabel,
   isSafeMediaUrl,
   normalizePromoCode,
   normalizeTelegramHandle,
@@ -42,6 +49,7 @@ import {
   validateManagerInquiryInput,
   validatePasswordChangeInput,
   validatePromoCodeInput,
+  validateTrackingInput,
   validateWheelSegments,
 } from './shopLogic';
 
@@ -199,22 +207,40 @@ test('prize wheel selection, target angle alignment, and handle @SVV_manager che
   }
 });
 
-test('calculateChinaBuyoutQuote and validateChinaBuyoutInput compute accurate quotes', () => {
+test('calculateChinaBuyoutQuote and validateChinaBuyoutInput use 13.8 rate, 9% fee, free report, $45 air and 750/kg cargo', () => {
+  assert.equal(CHINA_CNY_RATE, 13.8);
+  assert.equal(CHINA_BUYOUT_COMMISSION_RATE, 0.09);
+  assert.equal(CHINA_AIR_SHIPPING_USD, 45);
+  assert.equal(CHINA_CARGO_RUB_PER_KG, 750);
+
+  const zeroQuote = calculateChinaBuyoutQuote({ priceCny: 0, shippingSpeed: 'air' });
+  assert.equal(zeroQuote.totalRub, 0);
+  assert.equal(zeroQuote.shippingUsd, 0);
+  assert.equal(zeroQuote.inspectionRub, 0);
+
   const airQuote = calculateChinaBuyoutQuote({
-    priceCny: 2000,
-    category: 'sneakers',
+    priceCny: 1000,
     shippingSpeed: 'air',
   });
+  assert.equal(airQuote.cnyRate, 13.8);
+  assert.equal(airQuote.goodsRub, 13800);
+  assert.equal(airQuote.serviceFeeRub, Math.round(13800 * 0.09));
+  assert.equal(airQuote.inspectionRub, 0);
+  assert.equal(airQuote.shippingUsd, 45);
+  assert.equal(airQuote.shippingRub, 0);
+  assert.equal(airQuote.totalRub, 13800 + Math.round(13800 * 0.09));
+
   const cargoQuote = calculateChinaBuyoutQuote({
-    priceCny: 2000,
-    category: 'sneakers',
+    priceCny: 1000,
     shippingSpeed: 'cargo',
+    weightKg: 2,
   });
-  assert.equal(airQuote.goodsRub, 27600);
-  assert.ok(airQuote.totalRub > cargoQuote.totalRub);
-  assert.equal(airQuote.inspectionRub, 900);
+  assert.equal(cargoQuote.shippingUsd, 0);
+  assert.equal(cargoQuote.shippingRub, 1500);
+  assert.equal(cargoQuote.totalRub, 13800 + Math.round(13800 * 0.09) + 1500);
 
   const badBuyout = validateChinaBuyoutInput({
+    buyoutLink: 'not-a-url',
     sourceUrlOrName: 'x',
     brand: '',
     size: '42',
@@ -224,13 +250,44 @@ test('calculateChinaBuyoutQuote and validateChinaBuyoutInput compute accurate qu
   assert.equal(badBuyout.length, 3);
 
   const okBuyout = validateChinaBuyoutInput({
-    sourceUrlOrName: 'https://example.com/item/12345',
+    buyoutLink: 'https://www.poizon.com/product/12345',
+    sourceUrlOrName: 'Кроссовки',
     brand: 'Archive Line',
     size: 'EU 42',
     priceCny: 6200,
     telegramHandle: '@svv_client',
+    imageUrl: '/uploads/test.jpg',
   });
   assert.deepEqual(okBuyout, []);
+});
+
+test('expanded clothing categories include Носки and tracking validation helpers work', () => {
+  assert.ok(CATEGORIES.includes('Носки'));
+  assert.ok(CATEGORIES.includes('Нижнее бельё'));
+  assert.ok(CATEGORIES.includes('Головные уборы'));
+
+  assert.equal(getTrackingStageIndex('confirmed'), 0);
+  assert.equal(getTrackingStageIndex('ready_delivered'), 4);
+  assert.equal(getTrackingStageLabel('in_transit'), 'В пути (Авиа / Карго)');
+
+  assert.equal(
+    validateTrackingInput({
+      orderCode: '',
+      telegramHandle: 'x',
+      itemTitle: '',
+      imageUrl: 'javascript:alert(1)',
+    }).length,
+    4
+  );
+  assert.deepEqual(
+    validateTrackingInput({
+      orderCode: 'SVV-1042',
+      telegramHandle: '@svv_client',
+      itemTitle: 'Носки Heavy',
+      imageUrl: '/uploads/socks.jpg',
+    }),
+    []
+  );
 });
 
 test('generateRandomFit creates a balanced multi-item outfit from available products', () => {

@@ -1,21 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Heart, Ruler, ShoppingBag, X } from 'lucide-react';
+import { Ruler, ShoppingBag, X } from 'lucide-react';
 import type { LuxuryProduct } from '../data/catalog';
 import { formatRub } from '../utils/shopLogic';
 
 interface ProductDetailModalProps {
   product: LuxuryProduct | null;
-  isFavorite: boolean;
   onClose: () => void;
-  onToggleFavorite: (productId: string) => void;
   onAddToCart: (productId: string, size: string) => void;
 }
 
 export function ProductDetailModal({
   product,
-  isFavorite,
   onClose,
-  onToggleFavorite,
   onAddToCart,
 }: ProductDetailModalProps) {
   const [selectedSize, setSelectedSize] = useState<string>('');
@@ -163,29 +159,17 @@ export function ProductDetailModal({
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => onToggleFavorite(product.id)}
-                aria-label={isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
-                className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full border border-[var(--svv-border-strong)] bg-[var(--svv-input)] hover:opacity-80 transition-opacity cursor-pointer shrink-0"
-              >
-                <Heart
-                  className={`w-5 h-5 ${
-                    isFavorite ? 'fill-[var(--svv-text)] text-[var(--svv-text)]' : 'text-[var(--svv-text)]'
-                  }`}
-                />
-              </button>
+            <div className="pt-2">
               <button
                 type="button"
                 onClick={() => {
                   onAddToCart(product.id, selectedSize || product.sizes[0] || 'One Size');
                   onClose();
                 }}
-                className="flex-1 min-h-[48px] px-5 rounded-full bg-[var(--svv-accent)] text-[var(--svv-accent-fg)] text-sm font-bold hover:bg-[var(--svv-accent-hover)] transition-colors inline-flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full min-h-[48px] px-5 rounded-full bg-[var(--svv-accent)] text-[var(--svv-accent-fg)] text-sm font-bold hover:bg-[var(--svv-accent-hover)] transition-colors inline-flex items-center justify-center gap-2 cursor-pointer"
               >
                 <ShoppingBag className="w-4 h-4" />
-                <span>Добавить · {formatRub(product.price)}</span>
+                <span>Добавить в корзину · {formatRub(product.price)}</span>
               </button>
             </div>
           </div>

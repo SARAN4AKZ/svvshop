@@ -33,6 +33,7 @@ interface CartDrawerProps {
   onUpdateQty: (productId: string, size: string, delta: number) => void;
   onOrderConfirmed: (receipt: OrderReceipt) => void;
   onClearReceipt: () => void;
+  onGoToTracking?: (orderCode: string) => void;
 }
 
 export function CartDrawer({
@@ -48,6 +49,7 @@ export function CartDrawer({
   onUpdateQty,
   onOrderConfirmed,
   onClearReceipt,
+  onGoToTracking,
 }: CartDrawerProps) {
   const [customerName, setCustomerName] = useState(defaultName);
   const [telegramHandle, setTelegramHandle] = useState(defaultHandle);
@@ -269,6 +271,21 @@ export function CartDrawer({
                   </a>
                 );
               })()}
+
+              {onGoToTracking && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const code = lastOrder.id;
+                    onClearReceipt();
+                    onClose();
+                    onGoToTracking(code);
+                  }}
+                  className="w-full min-h-[44px] px-4 rounded-full bg-[var(--svv-surface-2)] border border-[var(--svv-border-strong)] text-xs font-bold text-[var(--svv-text)] hover:opacity-90 transition-opacity cursor-pointer"
+                >
+                  Отследить в Личном кабинете
+                </button>
+              )}
 
               <button
                 type="button"

@@ -1,14 +1,59 @@
 export type ProductCategory =
   | 'Все'
   | 'Куртки'
+  | 'Пальто и плащи'
   | 'Худи и свитшоты'
+  | 'Свитеры и кардиганы'
+  | 'Футболки и лонгсливы'
+  | 'Рубашки и поло'
   | 'Штаны'
+  | 'Джинсы'
+  | 'Шорты'
+  | 'Костюмы и платья'
+  | 'Юбки'
+  | 'Спортивная одежда'
   | 'Кроссовки'
+  | 'Обувь и ботинки'
   | 'Сумки'
-  | 'Аксессуары'
-  | 'Костюмы и платья';
+  | 'Головные уборы'
+  | 'Нижнее бельё'
+  | 'Носки'
+  | 'Аксессуары';
 
 export type LuxuryBrand = string;
+
+export type TrackingStage =
+  | 'confirmed'
+  | 'china_warehouse'
+  | 'in_transit'
+  | 'customs_arrived'
+  | 'ready_delivered';
+
+export interface TrackingRecord {
+  id: string;
+  orderCode: string;
+  telegramHandle: string;
+  itemTitle: string;
+  imageUrl?: string;
+  stage: TrackingStage;
+  carrierTrack: string;
+  deliveryMethod: string;
+  etaLabel: string;
+  locationNote: string;
+  updatedAt: string;
+}
+
+export const TRACKING_STAGES: Array<{
+  id: TrackingStage;
+  label: string;
+  shortLabel: string;
+}> = [
+  { id: 'confirmed', label: 'Заказ принят / Выкуплен', shortLabel: 'Выкуплен' },
+  { id: 'china_warehouse', label: 'На складе в Китае (фотоотчёт)', shortLabel: 'Склад КНР' },
+  { id: 'in_transit', label: 'В пути (Авиа / Карго)', shortLabel: 'В пути' },
+  { id: 'customs_arrived', label: 'Прибыл в РФ / СДЭК', shortLabel: 'В РФ' },
+  { id: 'ready_delivered', label: 'Готов к выдаче / Доставлен', shortLabel: 'Доставлен' },
+];
 
 export interface LuxuryProduct {
   id: string;
@@ -59,12 +104,24 @@ export const THEME_OPTIONS: Array<{ id: AppTheme; label: string; shortLabel: str
 export const CATEGORIES: ProductCategory[] = [
   'Все',
   'Куртки',
+  'Пальто и плащи',
   'Худи и свитшоты',
+  'Свитеры и кардиганы',
+  'Футболки и лонгсливы',
+  'Рубашки и поло',
   'Штаны',
-  'Кроссовки',
-  'Сумки',
-  'Аксессуары',
+  'Джинсы',
+  'Шорты',
   'Костюмы и платья',
+  'Юбки',
+  'Спортивная одежда',
+  'Кроссовки',
+  'Обувь и ботинки',
+  'Сумки',
+  'Головные уборы',
+  'Нижнее бельё',
+  'Носки',
+  'Аксессуары',
 ];
 
 export const CATEGORY_TILES: CategoryTile[] = [

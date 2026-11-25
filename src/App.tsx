@@ -47,11 +47,12 @@ import { ChinaBuyoutSection } from './components/ChinaBuyoutSection';
 import { ManagerContactSection } from './components/ManagerContactSection';
 import { CartDrawer } from './components/CartDrawer';
 import { AdminCatalogPanel } from './components/AdminCatalogPanel';
+import { AccountTrackingView } from './components/AccountTrackingView';
 import { AmbientBackdrop } from './components/AmbientBackdrop';
 import { LicenseAgreementModal } from './components/LicenseAgreementModal';
 
 const STORAGE_CART_KEY = 'svv_shop_cart_v3';
-const STORAGE_FAVS_KEY = 'svv_shop_favs_v3';
+const STORAGE_ORDERS_KEY = 'svv_shop_orders_v1';
 const STORAGE_THEME_KEY = 'svv_shop_theme_v1';
 
 const EMPTY_INBOX_SUMMARY: InboxSummary = {
@@ -95,14 +96,15 @@ export default function App() {
       return [];
     }
   });
-  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
+  const [savedOrderCodes, setSavedOrderCodes] = useState<string[]>(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_FAVS_KEY);
+      const raw = localStorage.getItem(STORAGE_ORDERS_KEY);
       return raw ? (JSON.parse(raw) as string[]) : [];
     } catch {
       return [];
     }
   });
+  const [trackingLookupSeed, setTrackingLookupSeed] = useState('');
 
   const [activeView, setActiveView] = useState<ActiveView>('home');
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory>('Все');
@@ -304,11 +306,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_FAVS_KEY, JSON.stringify(favoriteIds));
+      localStorage.setItem(STORAGE_ORDERS_KEY, JSON.stringify(savedOrderCodes));
     } catch {
       // Ignore quota errors
     }
-  }, [favoriteIds]);
+  }, [savedOrderCodes]);
 
   const showFeedback = (message: string) => {
     setToastMessage(message);
@@ -335,24 +337,16 @@ export default function App() {
         category: selectedCategory,
         brand: selectedBrand,
         search: searchQuery,
-        favoritesOnly: activeView === 'favorites',
-        favoriteIds,
       }),
-    [products, selectedCategory, selectedBrand, searchQuery, activeView, favoriteIds]
-  );
-
-  const favoriteProducts = useMemo(
-    () => products.filter((p) => favoriteIds.includes(p.id)),
-    [products, favoriteIds]
+    [products, selectedCategory, selectedBrand, searchQuery]
   );
 
   const cartCount = useMemo(() => getCartCount(cart), [cart]);
 
-  const handleToggleFavorite = (productId: string) => {
-    triggerHaptic('light');
-    setFavoriteIds((prev) =>
-      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId]
-    );
+  const rememberOrderCode = (code: string) => {
+    const clean = code.trim();
+    if (!clean) return;
+    setSavedOrderCodes((prev) => [clean, ...prev.filter((c) => c !== clean)].slice(0, 12));
   };
 
   const handleAddToCart = (productId: string, size: string) => {
@@ -725,7 +719,7 @@ export default function App() {
         <TopBar
           activeView={activeView}
           cartCount={cartCount}
-          favoritesCount={favoriteIds.length}
+          savedOrdersCount={savedOrderCodes.length}
           newOrdersCount={inboxSummary.newOrdersCount}
           newRequestsCount={inboxSummary.newTotalCount}
           theme={theme}
@@ -740,10 +734,8 @@ export default function App() {
               {activeView === 'home' && (
                 <HomeFeedView
                   products={products}
-                  favoriteIds={favoriteIds}
                   prizeWheel={prizeWheel}
                   heroBanner={heroBanner}
-                  onToggleFavorite={handleToggleFavorite}
                   onOpenDetail={(p) => setActiveProduct(p)}
                   onQuickAdd={handleQuickAdd}
                   onSelectCategory={(cat) => {
@@ -899,8 +891,6 @@ export default function App() {
                         >
                           <ProductCard
                             product={product}
-                            isFavorite={favoriteIds.includes(product.id)}
-                            onToggleFavorite={handleToggleFavorite}
                             onOpenDetail={(p) => setActiveProduct(p)}
                             onQuickAdd={handleQuickAdd}
                           />
@@ -916,8 +906,13 @@ export default function App() {
                   defaultHandle={tgDefaultHandle}
                   onSubmitted={(ticket) => {
                     triggerHaptic('success');
+                    rememberOrderCode(ticket.id);
                     showFeedback(`Заявка ${ticket.id} принята`);
                     void refreshInboxSummary();
+                  }}
+                  onGoToTracking={(orderCode) => {
+                    setTrackingLookupSeed(orderCode);
+                    handleSelectView('account');
                   }}
                 />
               )}
@@ -935,46 +930,15 @@ export default function App() {
                 />
               )}
 
-              {activeView === 'favorites' && (
-                <section className="py-5 sm:py-8 px-4 sm:px-0">
-                  <div className="mb-5">
-                    <h1 className="font-display text-2xl sm:text-3xl font-black uppercase text-[var(--svv-text)] tracking-tight">
-                      Избранное
-                    </h1>
-                    <p className="mt-1 text-xs sm:text-sm text-[var(--svv-muted)]">
-                      Сохранённые вещи: {favoriteProducts.length}
-                    </p>
-                  </div>
-
-                  {favoriteProducts.length === 0 ? (
-                    <div className="py-16 text-center space-y-3 bg-[var(--svv-surface)] border border-[var(--svv-border)] rounded-2xl">
-                      <p className="text-base font-semibold text-[var(--svv-text)]">Пока пусто</p>
-                      <p className="text-xs text-[var(--svv-muted)]">
-                        Нажмите на сердце на любой карточке, чтобы отложить вещь.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectView('catalog')}
-                        className="min-h-[40px] px-4 py-2 rounded-full bg-[var(--svv-accent)] text-[var(--svv-accent-fg)] text-xs font-bold cursor-pointer"
-                      >
-                        Перейти в каталог
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3.5 gap-y-6 sm:gap-5">
-                      {favoriteProducts.map((product) => (
-                        <ProductCard
-                          key={product.id}
-                          product={product}
-                          isFavorite
-                          onToggleFavorite={handleToggleFavorite}
-                          onOpenDetail={(p) => setActiveProduct(p)}
-                          onQuickAdd={handleQuickAdd}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
+              {activeView === 'account' && (
+                <AccountTrackingView
+                  defaultName={tgDefaultName}
+                  defaultHandle={tgDefaultHandle}
+                  initialLookupQuery={trackingLookupSeed}
+                  savedOrderCodes={savedOrderCodes}
+                  onGoToCatalog={() => handleSelectView('catalog')}
+                  onGoToChinaBuyout={() => handleSelectView('china')}
+                />
               )}
 
               {activeView === 'admin' && (
@@ -1069,15 +1033,13 @@ export default function App() {
       <BottomTabBar
         activeView={activeView}
         cartCount={cartCount}
-        favoritesCount={favoriteIds.length}
+        savedOrdersCount={savedOrderCodes.length}
         onSelectTab={handleMobileTabSelect}
       />
 
       <ProductDetailModal
         product={activeProduct}
-        isFavorite={activeProduct ? favoriteIds.includes(activeProduct.id) : false}
         onClose={() => setActiveProduct(null)}
-        onToggleFavorite={handleToggleFavorite}
         onAddToCart={handleAddToCart}
       />
 
@@ -1094,11 +1056,16 @@ export default function App() {
         onUpdateQty={handleUpdateQty}
         onOrderConfirmed={(receipt) => {
           triggerHaptic('success');
+          rememberOrderCode(receipt.id);
           setLastOrder(receipt);
           setCart([]);
           void refreshInboxSummary();
         }}
         onClearReceipt={() => setLastOrder(null)}
+        onGoToTracking={(orderCode) => {
+          setTrackingLookupSeed(orderCode);
+          handleSelectView('account');
+        }}
       />
 
       <LicenseAgreementModal

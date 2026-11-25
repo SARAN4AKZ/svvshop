@@ -1,13 +1,13 @@
-import { Bell, Flame, Heart, MessageSquare, Moon, Search, Shield, ShoppingBag, Sun } from 'lucide-react';
+import { Bell, Flame, MessageSquare, Moon, Search, Shield, ShoppingBag, Sun, User } from 'lucide-react';
 import type { AppTheme } from '../data/catalog';
 import { getThemeLabel } from '../utils/shopLogic';
 
-export type ActiveView = 'home' | 'catalog' | 'china' | 'manager' | 'favorites' | 'admin';
+export type ActiveView = 'home' | 'catalog' | 'china' | 'manager' | 'account' | 'admin';
 
 interface TopBarProps {
   activeView: ActiveView;
   cartCount: number;
-  favoritesCount: number;
+  savedOrdersCount: number;
   newOrdersCount: number;
   newRequestsCount: number;
   theme: AppTheme;
@@ -20,7 +20,7 @@ interface TopBarProps {
 export function TopBar({
   activeView,
   cartCount,
-  favoritesCount,
+  savedOrdersCount,
   newOrdersCount,
   newRequestsCount,
   theme,
@@ -114,7 +114,7 @@ export function TopBar({
           })}
         </nav>
 
-        {/* Zone 3: Quick Actions (Theme, Search, Favorites, Cart, Mobile Admin w/ notification badge) */}
+        {/* Zone 3: Quick Actions (Theme, Search, Account/Tracking, Cart, Mobile Admin) */}
         <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
           <button
             type="button"
@@ -140,18 +140,22 @@ export function TopBar({
 
           <button
             type="button"
-            onClick={() => onSelectView('favorites')}
-            aria-label={`Избранное, товаров: ${favoritesCount}`}
-            className="relative min-h-[44px] min-w-[36px] sm:min-w-[42px] flex items-center justify-center rounded-full text-[var(--svv-text)] hover:bg-[var(--svv-surface-2)] transition-colors cursor-pointer"
+            onClick={() => onSelectView('account')}
+            aria-label="Личный кабинет и трекинг заказа"
+            title="Личный кабинет и трекинг"
+            className={`relative min-h-[44px] min-w-[36px] sm:min-w-[42px] lg:w-auto lg:px-3 flex items-center justify-center gap-1.5 rounded-full transition-colors cursor-pointer ${
+              activeView === 'account'
+                ? 'bg-[var(--svv-surface-2)] text-[var(--svv-text)]'
+                : 'text-[var(--svv-text)] hover:bg-[var(--svv-surface-2)]'
+            }`}
           >
-            <Heart
-              className={`w-[18px] h-[18px] sm:w-5 sm:h-5 ${
-                activeView === 'favorites' ? 'fill-[var(--svv-text)]' : ''
-              }`}
-            />
-            {favoritesCount > 0 && (
-              <span className="absolute top-1.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[var(--svv-accent)] text-[var(--svv-accent-fg)] text-[10px] font-bold flex items-center justify-center tabular-nums">
-                {favoritesCount}
+            <User className="w-[18px] h-[18px] sm:w-4 sm:h-4" />
+            <span className="hidden lg:inline text-xs font-semibold whitespace-nowrap">
+              Личный кабинет
+            </span>
+            {savedOrdersCount > 0 && (
+              <span className="lg:static absolute top-1.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[var(--svv-accent)] text-[var(--svv-accent-fg)] text-[10px] font-bold flex items-center justify-center tabular-nums">
+                {savedOrdersCount}
               </span>
             )}
           </button>

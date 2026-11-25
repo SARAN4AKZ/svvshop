@@ -15,6 +15,7 @@ import {
   RefreshCw,
   ShoppingBag,
   Trash2,
+  Truck,
 } from 'lucide-react';
 import {
   CATEGORIES,
@@ -32,6 +33,7 @@ import {
   formatRub,
   getNextRequestStatus,
   getRequestStatusLabel,
+  isSafeExternalWebUrl,
   parseSizesRaw,
   validateAdminProductInput,
   validatePasswordChangeInput,
@@ -41,9 +43,10 @@ import {
 import { buildTelegramConciergeUrl, handleTelegramLinkClick } from '../utils/telegram';
 import { AdminBannerEditor } from './AdminBannerEditor';
 import { AdminPromoManager } from './AdminPromoManager';
+import { AdminTrackingManager, type TrackingDraft } from './AdminTrackingManager';
 import { AdminWheelEditor } from './AdminWheelEditor';
 
-type AdminSubTab = 'catalog' | 'banner' | 'promos' | 'wheel' | 'inbox' | 'security';
+type AdminSubTab = 'catalog' | 'banner' | 'promos' | 'wheel' | 'inbox' | 'tracking' | 'security';
 type InboxType = 'orders' | 'buyouts' | 'inquiries';
 
 export interface ServerOrderEntry {
@@ -74,13 +77,17 @@ export interface ServerBuyoutEntry {
   id: string;
   createdAt: string;
   status?: RequestStatus;
+  buyoutLink?: string;
   sourceUrlOrName: string;
   brand: string;
   size: string;
   priceCny: number;
   estimatedRub: number;
+  shippingUsd?: number;
+  weightKg?: number;
   shippingSpeed: 'air' | 'cargo';
   telegramHandle: string;
+  imageUrl?: string;
   notes: string;
 }
 
@@ -205,6 +212,7 @@ export function AdminCatalogPanel({
   const [inquiryInbox, setInquiryInbox] = useState<ServerManagerInquiry[]>([]);
   const [inboxFilter, setInboxFilter] = useState<'all' | RequestStatus>('all');
   const [inboxLoading, setInboxLoading] = useState(false);
+  const [trackingDraft, setTrackingDraft] = useState<TrackingDraft | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -706,6 +714,7 @@ export function AdminCatalogPanel({
                     ? `Заявки (${totalInboxCount}) · +${newInboxCount}`
                     : `Заявки (${totalInboxCount})`,
               },
+              { id: 'tracking', label: 'Трекинг' },
               { id: 'security', label: 'Пароль' },
             ] as const
           ).map((tab) => {
@@ -1184,6 +1193,23 @@ export function AdminCatalogPanel({
         </div>
       )}
 
+      {/* Tracking Manager Sub-Tab */}
+      {canEdit && adminTab === 'tracking' && (
+        <div key="admin-tracking" className="tab-view-enter space-y-4">
+          {!adminBearerToken ? (
+            <div className="p-4 rounded-2xl bg-[var(--svv-surface)] border border-[var(--svv-border)] text-xs text-[var(--svv-muted)]">
+              Для управления трекингом отправлений выполните вход по паролю администратора.
+            </div>
+          ) : (
+            <AdminTrackingManager
+              adminBearerToken={adminBearerToken}
+              prefillDraft={trackingDraft}
+              onConsumePrefill={() => setTrackingDraft(null)}
+            />
+          )}
+        </div>
+      )}
+
       {/* Orders, Buyouts & Inquiries Inbox Sub-Tab */}
       {canEdit && adminTab === 'inbox' && (
         <div key="admin-inbox" className="tab-view-enter space-y-4">
@@ -1313,7 +1339,7 @@ export function AdminCatalogPanel({
                               </ul>
 
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                   <button
                                     type="button"
                                     onClick={() => void handleCycleInboxStatus('orders', ord.id, ord.status)}
@@ -1322,6 +1348,29 @@ export function AdminCatalogPanel({
                                     )}`}
                                   >
                                     {getRequestStatusLabel(ord.status)}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setTrackingDraft({
+                                        orderCode: ord.id,
+                                        telegramHandle: ord.telegramHandle,
+                                        itemTitle:
+                                          ord.items.length === 1
+                                            ? `${ord.items[0].brand} · ${ord.items[0].name} (${ord.items[0].size})`
+                                            : `${ord.items[0]?.brand ?? 'SVV'} (+ ещё ${ord.items.length - 1})`,
+                                        stage: 'confirmed',
+                                        carrierTrack: '',
+                                        deliveryMethod: ord.deliveryTitle,
+                                        etaLabel: '',
+                                        locationNote: 'Ожидает отправки со склада SVV.',
+                                      });
+                                      setAdminTab('tracking');
+                                    }}
+                                    className="min-h-[32px] px-3 rounded-full border border-[var(--svv-border-strong)] text-[11px] font-semibold text-[var(--svv-text)] hover:bg-[var(--svv-surface-2)] inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Truck className="w-3 h-3" />
+                                    <span>В трекинг</span>
                                   </button>
                                   {(() => {
                                     const tgUrl = buildTelegramConciergeUrl(
@@ -1367,30 +1416,55 @@ export function AdminCatalogPanel({
                           {visibleBuyouts.map((b) => (
                             <div key={b.id} className="py-3.5 first:pt-0 last:pb-0 space-y-2.5 text-xs">
                               <div className="flex justify-between gap-4">
-                                <div className="min-w-0">
-                                  <p className="font-semibold text-[var(--svv-text)] truncate">
-                                    {b.id} · {b.brand} — {b.sourceUrlOrName}
-                                  </p>
-                                  <p className="text-[11px] text-[var(--svv-muted)] mt-0.5">
-                                    {formatRequestTimestamp(b.createdAt)} · {b.telegramHandle} ·
-                                    Размер: {b.size} · {b.shippingSpeed === 'air' ? 'Авиа' : 'Карго'}
-                                  </p>
-                                  {b.notes && (
-                                    <p className="text-[11px] text-[var(--svv-text-soft)] mt-1">
-                                      Комментарий: {b.notes}
-                                    </p>
+                                <div className="flex items-start gap-3 min-w-0">
+                                  {b.imageUrl && (
+                                    <img
+                                      src={b.imageUrl}
+                                      alt={b.sourceUrlOrName}
+                                      referrerPolicy="no-referrer"
+                                      className="w-12 h-14 rounded-xl object-cover bg-[var(--svv-well)] border border-[var(--svv-border)] shrink-0"
+                                    />
                                   )}
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-[var(--svv-text)] truncate">
+                                      {b.id} · {b.brand} — {b.sourceUrlOrName}
+                                    </p>
+                                    <p className="text-[11px] text-[var(--svv-muted)] mt-0.5">
+                                      {formatRequestTimestamp(b.createdAt)} · {b.telegramHandle} ·
+                                      Размер: {b.size} ·{' '}
+                                      {b.shippingSpeed === 'air'
+                                        ? 'Авиа ($45)'
+                                        : `Карго (${b.weightKg ?? 1} кг)`}
+                                    </p>
+                                    {b.buyoutLink && isSafeExternalWebUrl(b.buyoutLink) && (
+                                      <a
+                                        href={b.buyoutLink}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="mt-1 inline-flex items-center gap-1 text-[11px] text-[var(--svv-accent)] hover:underline break-all"
+                                      >
+                                        <span>Ссылка на выкуп</span>
+                                        <ExternalLink className="w-3 h-3 shrink-0" />
+                                      </a>
+                                    )}
+                                    {b.notes && (
+                                      <p className="text-[11px] text-[var(--svv-text-soft)] mt-1">
+                                        Комментарий: {b.notes}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="text-right shrink-0 tabular-nums">
                                   <p className="font-bold text-[var(--svv-accent)]">
                                     {formatRub(b.estimatedRub)}
+                                    {b.shippingUsd ? ` + $${b.shippingUsd}` : ''}
                                   </p>
                                   <p className="text-[var(--svv-muted)]">{formatCny(b.priceCny)}</p>
                                 </div>
                               </div>
 
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                   <button
                                     type="button"
                                     onClick={() => void handleCycleInboxStatus('buyouts', b.id, b.status)}
@@ -1399,6 +1473,30 @@ export function AdminCatalogPanel({
                                     )}`}
                                   >
                                     {getRequestStatusLabel(b.status)}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setTrackingDraft({
+                                        orderCode: b.id,
+                                        telegramHandle: b.telegramHandle,
+                                        itemTitle: `${b.brand} — ${b.sourceUrlOrName} (${b.size})`.slice(0, 160),
+                                        imageUrl: b.imageUrl ?? '',
+                                        stage: 'confirmed',
+                                        carrierTrack: '',
+                                        deliveryMethod:
+                                          b.shippingSpeed === 'air'
+                                            ? 'Авиа ($45)'
+                                            : `Карго авто (${b.weightKg ?? 1} кг)`,
+                                        etaLabel: b.shippingSpeed === 'air' ? '7–12 дней' : '16–24 дня',
+                                        locationNote: 'Заявка на выкуп принята в обработку.',
+                                      });
+                                      setAdminTab('tracking');
+                                    }}
+                                    className="min-h-[32px] px-3 rounded-full border border-[var(--svv-border-strong)] text-[11px] font-semibold text-[var(--svv-text)] hover:bg-[var(--svv-surface-2)] inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Truck className="w-3 h-3" />
+                                    <span>В трекинг</span>
                                   </button>
                                   {(() => {
                                     const tgUrl = buildTelegramConciergeUrl(

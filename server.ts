@@ -11,6 +11,8 @@ import {
   type PrizeWheelConfig,
   type PrizeWheelSegment,
   type PromoCodeItem,
+  type TrackingRecord,
+  type TrackingStage,
   type WheelAccent,
 } from './src/data/catalog.ts';
 
@@ -62,13 +64,17 @@ interface BuyoutSubmission {
   id: string;
   createdAt: string;
   status: RequestStatus;
+  buyoutLink?: string;
   sourceUrlOrName: string;
   brand: string;
   size: string;
   priceCny: number;
   estimatedRub: number;
+  shippingUsd?: number;
+  weightKg?: number;
   shippingSpeed: 'air' | 'cargo';
   telegramHandle: string;
+  imageUrl?: string;
   notes: string;
 }
 
@@ -112,10 +118,63 @@ let heroBannerConfig: HeroBannerConfig = { ...DEFAULT_HERO_BANNER };
 const orderSubmissions: OrderSubmission[] = [];
 const buyoutRequests: BuyoutSubmission[] = [];
 const managerInquiries: ManagerInquiry[] = [];
+const trackingRecords: TrackingRecord[] = [];
+const publicUploadRateMap = new Map<string, { count: number; resetAt: number }>();
 
 function sanitizeStatus(raw: unknown): RequestStatus {
   if (raw === 'in_progress' || raw === 'done') return raw;
   return 'new';
+}
+
+const VALID_TRACKING_STAGES = new Set<TrackingStage>([
+  'confirmed',
+  'china_warehouse',
+  'in_transit',
+  'customs_arrived',
+  'ready_delivered',
+]);
+
+function sanitizeTrackingStage(raw: unknown): TrackingStage {
+  if (typeof raw === 'string' && VALID_TRACKING_STAGES.has(raw as TrackingStage)) {
+    return raw as TrackingStage;
+  }
+  return 'confirmed';
+}
+
+function sanitizeTrackingRecord(raw: unknown): TrackingRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const rawId = typeof obj.id === 'string' ? obj.id.trim().slice(0, 80) : '';
+  const id = rawId && /^[a-zA-Z0-9_-]+$/.test(rawId) ? rawId : `trk-${crypto.randomUUID().slice(0, 8)}`;
+  const orderCode = typeof obj.orderCode === 'string' ? obj.orderCode.trim().slice(0, 48) : '';
+  const rawHandle = typeof obj.telegramHandle === 'string' ? obj.telegramHandle.trim().slice(0, 40) : '';
+  const itemTitle = typeof obj.itemTitle === 'string' ? obj.itemTitle.trim().slice(0, 160) : '';
+  if (orderCode.length < 2 || !/^@?[a-zA-Z0-9_]{3,32}$/.test(rawHandle) || itemTitle.length < 2) {
+    return null;
+  }
+  const telegramHandle = rawHandle.startsWith('@') ? rawHandle : `@${rawHandle}`;
+  const rawImageUrl = typeof obj.imageUrl === 'string' ? obj.imageUrl.trim().slice(0, 500) : '';
+  const imageUrl =
+    rawImageUrl && !rawImageUrl.startsWith('//') && (rawImageUrl.startsWith('/') || rawImageUrl.startsWith('https://'))
+      ? rawImageUrl
+      : '';
+
+  return {
+    id,
+    orderCode,
+    telegramHandle,
+    itemTitle,
+    imageUrl: imageUrl || undefined,
+    stage: sanitizeTrackingStage(obj.stage),
+    carrierTrack: typeof obj.carrierTrack === 'string' ? obj.carrierTrack.trim().slice(0, 80) : '',
+    deliveryMethod: typeof obj.deliveryMethod === 'string' ? obj.deliveryMethod.trim().slice(0, 80) : '',
+    etaLabel: typeof obj.etaLabel === 'string' ? obj.etaLabel.trim().slice(0, 80) : '',
+    locationNote: typeof obj.locationNote === 'string' ? obj.locationNote.trim().slice(0, 280) : '',
+    updatedAt:
+      typeof obj.updatedAt === 'string' && obj.updatedAt.trim()
+        ? obj.updatedAt.trim().slice(0, 60)
+        : new Date().toISOString(),
+  };
 }
 
 function sanitizeBanner(raw: unknown): HeroBannerConfig | null {
@@ -181,6 +240,7 @@ function loadNonSecretStore(): void {
       orders?: OrderSubmission[];
       buyouts?: BuyoutSubmission[];
       inquiries?: ManagerInquiry[];
+      tracking?: TrackingRecord[];
     };
     if (Array.isArray(parsed.upserts)) {
       for (const item of parsed.upserts) {
@@ -252,6 +312,12 @@ function loadNonSecretStore(): void {
         }
       }
     }
+    if (Array.isArray(parsed.tracking)) {
+      for (const trk of parsed.tracking.slice(0, 200)) {
+        const clean = sanitizeTrackingRecord(trk);
+        if (clean) trackingRecords.push(clean);
+      }
+    }
   } catch {
     // Ignore corrupted store file and keep defaults
   }
@@ -269,6 +335,7 @@ function saveNonSecretStore(): void {
       orders: orderSubmissions.slice(0, 100),
       buyouts: buyoutRequests.slice(0, 100),
       inquiries: managerInquiries.slice(0, 100),
+      tracking: trackingRecords.slice(0, 200),
     };
     fs.writeFileSync(STORE_FILE, JSON.stringify(payload, null, 2), 'utf8');
   } catch {
@@ -670,27 +737,73 @@ async function createApp() {
     res.json({ banner: heroBannerConfig });
   });
 
-  app.post('/api/upload', requireAdminAuth, (req: Request, res: Response) => {
-    const dataUrl = typeof req.body?.dataUrl === 'string' ? req.body.dataUrl : '';
+  function saveUploadedDataUrl(dataUrl: string): { url?: string; error?: string } {
     const match = /^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!match) {
-      res.status(400).json({ error: 'Поддерживаются только изображения JPG, PNG или WEBP.' });
-      return;
+      return { error: 'Поддерживаются только изображения JPG, PNG или WEBP.' };
     }
     const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
     const buf = Buffer.from(match[2], 'base64');
     if (buf.length === 0 || buf.length > 3 * 1024 * 1024) {
-      res.status(400).json({ error: 'Размер фото не должен превышать 3 МБ.' });
-      return;
+      return { error: 'Размер фото не должен превышать 3 МБ.' };
     }
+
+    const isJpg = buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    const isPng =
+      buf.length >= 8 &&
+      buf[0] === 0x89 &&
+      buf[1] === 0x50 &&
+      buf[2] === 0x4e &&
+      buf[3] === 0x47;
+    const isWebp =
+      buf.length >= 12 &&
+      buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buf.subarray(8, 12).toString('ascii') === 'WEBP';
+
+    if ((ext === 'jpg' && !isJpg) || (ext === 'png' && !isPng) || (ext === 'webp' && !isWebp)) {
+      return { error: 'Содержимое файла не соответствует формату изображения.' };
+    }
+
     const filename = `svv-${crypto.randomUUID()}.${ext}`;
     const targetPath = path.resolve(UPLOAD_DIR, filename);
     if (!targetPath.startsWith(UPLOAD_DIR + path.sep)) {
-      res.status(400).json({ error: 'Некорректный путь сохранения.' });
-      return;
+      return { error: 'Некорректный путь сохранения.' };
     }
     fs.writeFileSync(targetPath, buf);
-    res.status(201).json({ url: `/uploads/${filename}` });
+    return { url: `/uploads/${filename}` };
+  }
+
+  app.post('/api/upload', requireAdminAuth, (req: Request, res: Response) => {
+    const dataUrl = typeof req.body?.dataUrl === 'string' ? req.body.dataUrl : '';
+    const saved = saveUploadedDataUrl(dataUrl);
+    if (!saved.url) {
+      res.status(400).json({ error: saved.error || 'Ошибка загрузки фото.' });
+      return;
+    }
+    res.status(201).json({ url: saved.url });
+  });
+
+  app.post('/api/buyouts/upload', (req: Request, res: Response) => {
+    const clientIp = req.ip || 'unknown';
+    const now = Date.now();
+    const bucket = publicUploadRateMap.get(clientIp);
+    if (bucket && bucket.resetAt > now) {
+      if (bucket.count >= 20) {
+        res.status(429).json({ error: 'Слишком много загрузок. Попробуйте позже.' });
+        return;
+      }
+      bucket.count += 1;
+    } else {
+      publicUploadRateMap.set(clientIp, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    }
+
+    const dataUrl = typeof req.body?.dataUrl === 'string' ? req.body.dataUrl : '';
+    const saved = saveUploadedDataUrl(dataUrl);
+    if (!saved.url) {
+      res.status(400).json({ error: saved.error || 'Ошибка загрузки фото.' });
+      return;
+    }
+    res.status(201).json({ url: saved.url });
   });
 
   app.post('/api/orders', (req: Request, res: Response) => {
@@ -771,6 +884,26 @@ async function createApp() {
 
     orderSubmissions.unshift(order);
     if (orderSubmissions.length > 100) orderSubmissions.pop();
+
+    const firstProd = serverCatalogOverrides.get(items[0].productId);
+    trackingRecords.unshift({
+      id: `trk-${order.id.toLowerCase()}`,
+      orderCode: order.id,
+      telegramHandle: order.telegramHandle,
+      itemTitle:
+        items.length === 1
+          ? `${items[0].brand} · ${items[0].name} (${items[0].size})`
+          : `${items[0].brand} · ${items[0].name} (+ ещё ${items.length - 1})`,
+      imageUrl: firstProd?.imageUrl,
+      stage: 'confirmed',
+      carrierTrack: '',
+      deliveryMethod: order.deliveryTitle,
+      etaLabel: '',
+      locationNote: 'Заказ оформлен, ожидает подтверждения менеджером.',
+      updatedAt: order.createdAt,
+    });
+    if (trackingRecords.length > 200) trackingRecords.pop();
+
     saveNonSecretStore();
     res.status(201).json({ order });
   });
@@ -781,6 +914,13 @@ async function createApp() {
 
   app.post('/api/buyouts', (req: Request, res: Response) => {
     const body = req.body as Record<string, unknown>;
+    const rawBuyoutLink =
+      typeof body?.buyoutLink === 'string' ? body.buyoutLink.trim().slice(0, 500) : '';
+    const buyoutLink =
+      rawBuyoutLink &&
+      (rawBuyoutLink.startsWith('https://') || rawBuyoutLink.startsWith('http://'))
+        ? rawBuyoutLink
+        : '';
     const sourceUrlOrName =
       typeof body?.sourceUrlOrName === 'string' ? body.sourceUrlOrName.trim().slice(0, 400) : '';
     const brand = typeof body?.brand === 'string' ? body.brand.trim().slice(0, 80) : '';
@@ -796,10 +936,29 @@ async function createApp() {
         ? Math.round(body.estimatedRub)
         : 0;
     const shippingSpeed = body?.shippingSpeed === 'cargo' ? 'cargo' : 'air';
+    const shippingUsd =
+      typeof body?.shippingUsd === 'number' && Number.isFinite(body.shippingUsd)
+        ? Math.max(0, Math.round(body.shippingUsd))
+        : shippingSpeed === 'air'
+        ? 45
+        : 0;
+    const weightKg =
+      typeof body?.weightKg === 'number' && Number.isFinite(body.weightKg)
+        ? Math.min(50, Math.max(0.5, Math.round(body.weightKg * 10) / 10))
+        : undefined;
+    const rawImageUrl =
+      typeof body?.imageUrl === 'string' ? body.imageUrl.trim().slice(0, 500) : '';
+    const imageUrl =
+      rawImageUrl &&
+      !rawImageUrl.startsWith('//') &&
+      (rawImageUrl.startsWith('/') || rawImageUrl.startsWith('https://'))
+        ? rawImageUrl
+        : '';
     const notes = typeof body?.notes === 'string' ? body.notes.trim().slice(0, 400) : '';
 
     if (
-      sourceUrlOrName.length < 3 ||
+      (!buyoutLink && sourceUrlOrName.length < 3) ||
+      (rawBuyoutLink && !buyoutLink) ||
       priceCny <= 0 ||
       !/^@?[a-zA-Z0-9_]{3,32}$/.test(telegramHandle)
     ) {
@@ -810,27 +969,107 @@ async function createApp() {
     const normalizedHandle = telegramHandle.startsWith('@')
       ? telegramHandle
       : `@${telegramHandle}`;
+    const displayLabel = sourceUrlOrName || buyoutLink;
     const submission: BuyoutSubmission = {
       id: `CN-${Math.floor(1000 + Math.random() * 9000)}`,
       createdAt: new Date().toISOString(),
       status: 'new',
-      sourceUrlOrName,
+      buyoutLink: buyoutLink || undefined,
+      sourceUrlOrName: displayLabel,
       brand: brand || 'Выкуп из Китая',
       size: size || 'Уточнить',
       priceCny,
       estimatedRub,
+      shippingUsd,
+      weightKg,
       shippingSpeed,
       telegramHandle: normalizedHandle,
+      imageUrl: imageUrl || undefined,
       notes,
     };
     buyoutRequests.unshift(submission);
     if (buyoutRequests.length > 100) buyoutRequests.pop();
+
+    trackingRecords.unshift({
+      id: `trk-${submission.id.toLowerCase()}`,
+      orderCode: submission.id,
+      telegramHandle: normalizedHandle,
+      itemTitle: `${submission.brand} — ${displayLabel} (${submission.size})`.slice(0, 160),
+      imageUrl: imageUrl || undefined,
+      stage: 'confirmed',
+      carrierTrack: '',
+      deliveryMethod: shippingSpeed === 'air' ? 'Авиа ($45)' : `Карго авто (${weightKg ?? 1} кг)`,
+      etaLabel: shippingSpeed === 'air' ? '7–12 дней' : '16–24 дня',
+      locationNote: 'Заявка на выкуп принята, ожидает обработки менеджером.',
+      updatedAt: submission.createdAt,
+    });
+    if (trackingRecords.length > 200) trackingRecords.pop();
+
     saveNonSecretStore();
     res.status(201).json({ submission });
   });
 
   app.get('/api/buyouts', requireAdminAuth, (_req: Request, res: Response) => {
     res.json({ buyouts: buyoutRequests });
+  });
+
+  app.get('/api/tracking', (req: Request, res: Response) => {
+    const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (rawQ.length < 2) {
+      res.json({ records: [] });
+      return;
+    }
+    const qLower = rawQ.toLowerCase();
+    const qHandle = qLower.startsWith('@') ? qLower : `@${qLower}`;
+    const matches = trackingRecords.filter((rec) => {
+      const codeMatch = rec.orderCode.toLowerCase() === qLower;
+      const trackMatch = rec.carrierTrack && rec.carrierTrack.toLowerCase() === qLower;
+      const handleMatch = rec.telegramHandle.toLowerCase() === qHandle;
+      return codeMatch || trackMatch || handleMatch;
+    });
+    res.json({ records: matches });
+  });
+
+  app.get('/api/admin/tracking', requireAdminAuth, (_req: Request, res: Response) => {
+    res.json({ records: trackingRecords });
+  });
+
+  app.post('/api/admin/tracking', requireAdminAuth, (req: Request, res: Response) => {
+    const record = sanitizeTrackingRecord(req.body);
+    if (!record) {
+      res.status(400).json({ error: 'Проверьте код заказа, @username клиента и название товара.' });
+      return;
+    }
+    record.updatedAt = new Date().toISOString();
+    const existingIdx = trackingRecords.findIndex(
+      (r) =>
+        r.id === record.id ||
+        r.orderCode.toLowerCase() === record.orderCode.toLowerCase()
+    );
+    if (existingIdx >= 0) {
+      trackingRecords[existingIdx] = {
+        ...record,
+        id: trackingRecords[existingIdx].id,
+      };
+    } else {
+      trackingRecords.unshift(record);
+      if (trackingRecords.length > 200) trackingRecords.pop();
+    }
+    saveNonSecretStore();
+    const saved = existingIdx >= 0 ? trackingRecords[existingIdx] : record;
+    res.status(existingIdx >= 0 ? 200 : 201).json({ record: saved });
+  });
+
+  app.delete('/api/admin/tracking/:id', requireAdminAuth, (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+    const idx = trackingRecords.findIndex((r) => r.id === id);
+    if (idx < 0) {
+      res.status(404).json({ error: 'Запись трекинга не найдена.' });
+      return;
+    }
+    trackingRecords.splice(idx, 1);
+    saveNonSecretStore();
+    res.json({ deletedId: id });
   });
 
   app.post('/api/inquiries', (req: Request, res: Response) => {

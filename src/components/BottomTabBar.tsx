@@ -1,19 +1,19 @@
-import { Globe, Heart, Home, LayoutGrid, ShoppingCart } from 'lucide-react';
+import { Globe, Home, LayoutGrid, ShoppingCart, User } from 'lucide-react';
 import type { ActiveView } from './TopBar';
 
-export type MobileTab = 'home' | 'catalog' | 'china' | 'cart' | 'favorites';
+export type MobileTab = 'home' | 'catalog' | 'china' | 'cart' | 'account';
 
 interface BottomTabBarProps {
   activeView: ActiveView;
   cartCount: number;
-  favoritesCount: number;
+  savedOrdersCount: number;
   onSelectTab: (tab: MobileTab) => void;
 }
 
 export function BottomTabBar({
   activeView,
   cartCount,
-  favoritesCount,
+  savedOrdersCount,
   onSelectTab,
 }: BottomTabBarProps) {
   const tabs: Array<{
@@ -26,7 +26,7 @@ export function BottomTabBar({
     { id: 'catalog', label: 'Каталог', icon: LayoutGrid },
     { id: 'china', label: 'Выкуп', icon: Globe },
     { id: 'cart', label: 'Корзина', icon: ShoppingCart, badge: cartCount },
-    { id: 'favorites', label: 'Избранное', icon: Heart, badge: favoritesCount },
+    { id: 'account', label: 'Кабинет', icon: User, badge: savedOrdersCount },
   ];
 
   return (
@@ -59,7 +59,7 @@ export function BottomTabBar({
                 <Icon
                   className={`w-5 h-5 transition-transform duration-200 ${
                     isActive ? '-translate-y-0.5 scale-105' : ''
-                  } ${isActive && tab.id === 'favorites' ? 'fill-[var(--svv-nav-fg)]' : ''}`}
+                  }`}
                   strokeWidth={isActive ? 2.2 : 1.75}
                 />
                 {typeof tab.badge === 'number' && tab.badge > 0 && (

@@ -14,10 +14,8 @@ import { ProductCard } from './ProductCard';
 
 interface HomeFeedViewProps {
   products: LuxuryProduct[];
-  favoriteIds: string[];
   prizeWheel: PrizeWheelConfig;
   heroBanner: HeroBannerConfig;
-  onToggleFavorite: (productId: string) => void;
   onOpenDetail: (product: LuxuryProduct) => void;
   onQuickAdd: (product: LuxuryProduct) => void;
   onSelectCategory: (category: ProductCategory) => void;
@@ -31,10 +29,8 @@ interface HomeFeedViewProps {
 
 export function HomeFeedView({
   products,
-  favoriteIds,
   prizeWheel,
   heroBanner,
-  onToggleFavorite,
   onOpenDetail,
   onQuickAdd,
   onSelectCategory,
@@ -330,8 +326,6 @@ export function HomeFeedView({
               >
                 <ProductCard
                   product={product}
-                  isFavorite={favoriteIds.includes(product.id)}
-                  onToggleFavorite={onToggleFavorite}
                   onOpenDetail={onOpenDetail}
                   onQuickAdd={onQuickAdd}
                   compact

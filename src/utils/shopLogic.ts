@@ -3,6 +3,7 @@ import {
   DELIVERY_OPTIONS,
   LUXURY_PRODUCTS,
   THEME_OPTIONS,
+  TRACKING_STAGES,
   type AppTheme,
   type DeliveryOption,
   type HeroBannerConfig,
@@ -12,6 +13,7 @@ import {
   type PrizeWheelSegment,
   type ProductCategory,
   type PromoCodeItem,
+  type TrackingStage,
 } from '../data/catalog';
 
 export interface CartItem {
@@ -53,10 +55,16 @@ export interface AdminProductInput {
   pairingTip: string;
 }
 
+export const CHINA_CNY_RATE = 13.8;
+export const CHINA_BUYOUT_COMMISSION_RATE = 0.09;
+export const CHINA_AIR_SHIPPING_USD = 45;
+export const CHINA_CARGO_RUB_PER_KG = 750;
+
 export interface ChinaBuyoutQuoteInput {
   priceCny: number;
-  category: 'sneakers' | 'hoodie' | 'jacket' | 'bag';
+  category?: 'sneakers' | 'hoodie' | 'jacket' | 'bag';
   shippingSpeed: 'air' | 'cargo';
+  weightKg?: number;
 }
 
 export interface ChinaBuyoutQuote {
@@ -64,17 +72,21 @@ export interface ChinaBuyoutQuote {
   goodsRub: number;
   inspectionRub: number;
   shippingRub: number;
+  shippingUsd: number;
+  weightKg: number;
   serviceFeeRub: number;
   totalRub: number;
   etaLabel: string;
 }
 
 export interface ChinaBuyoutFormInput {
+  buyoutLink?: string;
   sourceUrlOrName: string;
   brand: string;
   size: string;
   priceCny: number;
   telegramHandle: string;
+  imageUrl?: string;
 }
 
 export interface PromoEvaluation {
@@ -395,28 +407,25 @@ export function calculateOrderTotal(
 }
 
 export function calculateChinaBuyoutQuote(input: ChinaBuyoutQuoteInput): ChinaBuyoutQuote {
-  const cnyRate = 13.8;
+  const cnyRate = CHINA_CNY_RATE;
   const safeCny = Number.isFinite(input.priceCny) ? Math.max(0, input.priceCny) : 0;
+  const safeWeightKg =
+    typeof input.weightKg === 'number' && Number.isFinite(input.weightKg)
+      ? Math.min(50, Math.max(0.5, Math.round(input.weightKg * 10) / 10))
+      : 1;
+
   const goodsRub = Math.round(safeCny * cnyRate);
+  const inspectionRub = 0;
+  const serviceFeeRub =
+    safeCny > 0 ? Math.round(goodsRub * CHINA_BUYOUT_COMMISSION_RATE) : 0;
 
-  const baseWeightShipping =
-    input.category === 'jacket'
-      ? 3600
-      : input.category === 'sneakers'
-      ? 3100
-      : input.category === 'hoodie'
-      ? 2400
-      : 1900;
-
+  const shippingUsd =
+    safeCny > 0 && input.shippingSpeed === 'air' ? CHINA_AIR_SHIPPING_USD : 0;
   const shippingRub =
-    safeCny <= 0
-      ? 0
-      : input.shippingSpeed === 'air'
-      ? baseWeightShipping
-      : Math.max(1200, baseWeightShipping - 1100);
+    safeCny > 0 && input.shippingSpeed === 'cargo'
+      ? Math.round(safeWeightKg * CHINA_CARGO_RUB_PER_KG)
+      : 0;
 
-  const inspectionRub = safeCny > 0 ? 900 : 0;
-  const serviceFeeRub = safeCny > 0 ? Math.max(1500, Math.round(goodsRub * 0.08)) : 0;
   const totalRub = goodsRub + inspectionRub + shippingRub + serviceFeeRub;
 
   return {
@@ -424,22 +433,42 @@ export function calculateChinaBuyoutQuote(input: ChinaBuyoutQuoteInput): ChinaBu
     goodsRub,
     inspectionRub,
     shippingRub,
+    shippingUsd,
+    weightKg: safeWeightKg,
     serviceFeeRub,
     totalRub,
-    etaLabel: input.shippingSpeed === 'air' ? '7–12 дней (Авиа)' : '16–24 дня (Карго)',
+    etaLabel:
+      input.shippingSpeed === 'air'
+        ? '7–12 дней (Авиа · $45)'
+        : `16–24 дня (Карго · ${CHINA_CARGO_RUB_PER_KG} ₽/кг)`,
   };
+}
+
+export function isSafeExternalWebUrl(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  return trimmed.startsWith('https://') || trimmed.startsWith('http://');
 }
 
 export function validateChinaBuyoutInput(input: ChinaBuyoutFormInput): string[] {
   const errors: string[] = [];
-  if (input.sourceUrlOrName.trim().length < 3) {
-    errors.push('Вставьте ссылку или укажите название вещи.');
+  const link = (input.buyoutLink ?? '').trim();
+  const name = input.sourceUrlOrName.trim();
+
+  if (link && !isSafeExternalWebUrl(link)) {
+    errors.push('Ссылка на выкуп должна начинаться с https:// или http://.');
+  }
+  if (!link && name.length < 3) {
+    errors.push('Добавьте ссылку на выкуп или укажите название вещи (минимум 3 символа).');
   }
   if (!Number.isFinite(input.priceCny) || input.priceCny <= 0 || input.priceCny > 500000) {
-    errors.push('Укажите корректную цену товара в юанях (¥).');
+    errors.push('Укажите цену товара в юанях (¥) больше 0.');
   }
   if (!validateTelegramHandle(input.telegramHandle)) {
     errors.push('Укажите корректный Telegram @username для фотоотчёта.');
+  }
+  if (input.imageUrl && !isSafeMediaUrl(input.imageUrl)) {
+    errors.push('Некорректный путь или ссылка на фото вещи.');
   }
   return errors;
 }
@@ -449,12 +478,28 @@ export function generateRandomFit(
   seed = 0
 ): LuxuryProduct[] {
   if (products.length === 0) return [];
-  const tops = products.filter((p) =>
-    p.category === 'Худи и свитшоты' || p.category === 'Куртки' || p.category === 'Костюмы и платья'
+  const tops = products.filter(
+    (p) =>
+      p.category === 'Худи и свитшоты' ||
+      p.category === 'Куртки' ||
+      p.category === 'Пальто и плащи' ||
+      p.category === 'Свитеры и кардиганы' ||
+      p.category === 'Футболки и лонгсливы' ||
+      p.category === 'Рубашки и поло' ||
+      p.category === 'Костюмы и платья' ||
+      p.category === 'Спортивная одежда'
   );
-  const bottoms = products.filter((p) => p.category === 'Штаны');
+  const bottoms = products.filter(
+    (p) => p.category === 'Штаны' || p.category === 'Джинсы' || p.category === 'Шорты' || p.category === 'Юбки'
+  );
   const footwearAndBags = products.filter(
-    (p) => p.category === 'Кроссовки' || p.category === 'Сумки' || p.category === 'Аксессуары'
+    (p) =>
+      p.category === 'Кроссовки' ||
+      p.category === 'Обувь и ботинки' ||
+      p.category === 'Сумки' ||
+      p.category === 'Головные уборы' ||
+      p.category === 'Носки' ||
+      p.category === 'Аксессуары'
   );
 
   const picked: LuxuryProduct[] = [];
@@ -622,3 +667,41 @@ export function validatePasswordChangeInput(input: {
   }
   return errors;
 }
+
+export function getTrackingStageIndex(stage: TrackingStage): number {
+  const idx = TRACKING_STAGES.findIndex((s) => s.id === stage);
+  return idx >= 0 ? idx : 0;
+}
+
+export function getTrackingStageLabel(stage: TrackingStage): string {
+  return TRACKING_STAGES.find((s) => s.id === stage)?.label ?? TRACKING_STAGES[0].label;
+}
+
+export function normalizeTrackingQuery(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  return trimmed;
+}
+
+export function validateTrackingInput(input: {
+  orderCode: string;
+  telegramHandle: string;
+  itemTitle: string;
+  imageUrl?: string;
+}): string[] {
+  const errors: string[] = [];
+  if (input.orderCode.trim().length < 2 || input.orderCode.trim().length > 48) {
+    errors.push('Укажите код заказа или трекинга (от 2 символов).');
+  }
+  if (!validateTelegramHandle(input.telegramHandle)) {
+    errors.push('Укажите корректный Telegram @username клиента.');
+  }
+  if (input.itemTitle.trim().length < 2 || input.itemTitle.trim().length > 160) {
+    errors.push('Укажите название вещи или посылки.');
+  }
+  if (input.imageUrl && !isSafeMediaUrl(input.imageUrl)) {
+    errors.push('Ссылка на фото должна начинаться с https:// или /uploads/.');
+  }
+  return errors;
+}
+

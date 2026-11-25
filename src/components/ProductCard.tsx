@@ -1,12 +1,10 @@
 import { useState } from 'react';
-import { Heart, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { LuxuryProduct } from '../data/catalog';
 import { formatRub } from '../utils/shopLogic';
 
 interface ProductCardProps {
   product: LuxuryProduct;
-  isFavorite: boolean;
-  onToggleFavorite: (productId: string) => void;
   onOpenDetail: (product: LuxuryProduct) => void;
   onQuickAdd: (product: LuxuryProduct) => void;
   compact?: boolean;
@@ -14,8 +12,6 @@ interface ProductCardProps {
 
 export function ProductCard({
   product,
-  isFavorite,
-  onToggleFavorite,
   onOpenDetail,
   onQuickAdd,
   compact = false,
@@ -46,24 +42,6 @@ export function ProductCard({
             </div>
           )}
           <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 via-black/35 to-transparent pointer-events-none" />
-        </button>
-
-        {/* Favorite heart top-right */}
-        <button
-          type="button"
-          onClick={() => onToggleFavorite(product.id)}
-          aria-label={
-            isFavorite
-              ? `Убрать из избранного: ${product.name}`
-              : `Добавить в избранное: ${product.name}`
-          }
-          className="absolute top-2 right-2 min-h-[38px] min-w-[38px] flex items-center justify-center rounded-full bg-[#eae7df]/90 backdrop-blur-sm hover:bg-[#ffffff] press-spring cursor-pointer shadow-sm"
-        >
-          <Heart
-            className={`w-4 h-4 transition-transform duration-200 ${
-              isFavorite ? 'fill-[#111111] text-[#111111] scale-110' : 'text-[#111111]'
-            }`}
-          />
         </button>
 
         {/* Price overlay inside bottom scrim + quick add */}
