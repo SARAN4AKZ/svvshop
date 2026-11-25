@@ -524,6 +524,10 @@ async function createApp() {
   app.use(express.json({ limit: '4mb' }));
   app.use('/uploads', express.static(UPLOAD_DIR));
 
+  app.get('/api/health', (_req: Request, res: Response) => {
+    res.json({ ok: true });
+  });
+
   app.get('/api/admin/status', (_req: Request, res: Response) => {
     res.json({ mode: getAuthMode() });
   });
