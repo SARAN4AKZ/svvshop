@@ -109,6 +109,8 @@ interface AdminCatalogPanelProps {
   inboxSummary?: InboxSummary;
   userEmail: string | null;
   isCloudAdmin: boolean;
+  cloudAuthError?: string | null;
+  localOnlyProductCount?: number;
   adminBearerToken: string | null;
   authMode: 'env' | 'claimed' | 'unclaimed';
   authBusy: boolean;
@@ -121,6 +123,7 @@ interface AdminCatalogPanelProps {
   onLockPasswordSession: () => void;
   onSignInGoogle: () => void;
   onSignOutGoogle: () => void;
+  onSyncLocalToCloud?: () => Promise<void>;
   onSaveProduct: (product: LuxuryProduct, isNew: boolean) => Promise<void>;
   onDeleteProduct: (productId: string) => Promise<void>;
   onSaveBanner: (banner: HeroBannerConfig) => Promise<void>;
@@ -167,6 +170,8 @@ export function AdminCatalogPanel({
   inboxSummary,
   userEmail,
   isCloudAdmin,
+  cloudAuthError = null,
+  localOnlyProductCount = 0,
   adminBearerToken,
   authMode,
   authBusy,
@@ -176,6 +181,7 @@ export function AdminCatalogPanel({
   onLockPasswordSession,
   onSignInGoogle,
   onSignOutGoogle,
+  onSyncLocalToCloud,
   onSaveProduct,
   onDeleteProduct,
   onSaveBanner,
@@ -184,6 +190,7 @@ export function AdminCatalogPanel({
   onDeletePromo,
   onSaveWheel,
 }: AdminCatalogPanelProps) {
+  const [syncingToCloud, setSyncingToCloud] = useState(false);
   const [adminTab, setAdminTab] = useState<AdminSubTab>('catalog');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -336,14 +343,19 @@ export function AdminCatalogPanel({
 
   const handlePasswordSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!passwordInput.trim()) {
+    const trimmed = passwordInput.trim();
+    if (!trimmed) {
       setPasswordError('Введите пароль администратора.');
+      return;
+    }
+    if (authMode === 'unclaimed' && trimmed.length < 4) {
+      setPasswordError('Пароль должен содержать минимум 4 символа.');
       return;
     }
     setPasswordBusy(true);
     setPasswordError(null);
     try {
-      await onPasswordClaimOrLogin(passwordInput.trim(), authMode === 'unclaimed');
+      await onPasswordClaimOrLogin(trimmed, authMode === 'unclaimed');
       setPasswordInput('');
     } catch (err) {
       setPasswordError(err instanceof Error ? err.message : 'Ошибка входа.');
@@ -583,8 +595,10 @@ export function AdminCatalogPanel({
                 </h2>
                 <p className="text-xs text-[var(--svv-muted)] mt-0.5">
                   {authMode === 'unclaimed'
-                    ? 'Введите ваш рабочий пароль для активации защиты админ-панели в текущей сессии сервера.'
-                    : 'Пароль проверяется на сервере (токен действует в текущей сессии).'}
+                    ? 'Задайте пароль от 4 символов для этой сессии сервера. Для постоянного пароля на Railway добавьте SVV_ADMIN_PASSCODE в Variables.'
+                    : authMode === 'env'
+                    ? 'Введите пароль из переменной окружения SVV_ADMIN_PASSCODE.'
+                    : 'Введите активированный пароль (или значение SVV_ADMIN_PASSCODE из переменных сервера).'}
                 </p>
               </div>
             </div>
@@ -634,16 +648,22 @@ export function AdminCatalogPanel({
           </form>
 
           <div className="p-5 rounded-2xl bg-[var(--svv-surface)] border border-[var(--svv-border)] flex flex-col justify-between gap-4">
-            <div>
+            <div className="space-y-2">
               <h2 className="text-sm font-bold text-[var(--svv-text)]">
                 {userEmail
                   ? `Аккаунт ${userEmail} не является владельцем`
                   : 'Облачная синхронизация (Google)'}
               </h2>
-              <p className="text-xs text-[var(--svv-muted)] mt-1 leading-relaxed">
-                Либо войдите через Google-аккаунт владельца Firebase, чтобы вещи сохранялись в
-                облачную базу Firestore.
+              <p className="text-xs text-[var(--svv-muted)] leading-relaxed">
+                Войдите через Google-аккаунт владельца, чтобы вещи, баннер, промокоды и колесо
+                призов сохранялись в облаке Firestore и отображались везде (AI Studio, Railway,
+                Telegram).
               </p>
+              {cloudAuthError && (
+                <p role="alert" className="text-xs text-[var(--svv-danger-fg)]">
+                  {cloudAuthError}
+                </p>
+              )}
             </div>
             <button
               type="button"
@@ -657,40 +677,79 @@ export function AdminCatalogPanel({
           </div>
         </div>
       ) : (
-        <div className="p-4 rounded-2xl bg-[var(--svv-surface)] border border-[var(--svv-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold text-[var(--svv-text)]">
-              {isCloudAdmin
-                ? `Облачный доступ активен (${userEmail})`
-                : 'Сессия администратора подтверждена'}
-            </p>
-            <p className="text-[11px] text-[var(--svv-muted)] mt-0.5">
-              Загружайте реальные фото вещей, меняйте цены, описания и просматривайте входящие заявки.
-            </p>
+        <div className="p-4 rounded-2xl bg-[var(--svv-surface)] border border-[var(--svv-border)] space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-[var(--svv-text)]">
+                {isCloudAdmin
+                  ? `Облако Firestore активно (${userEmail})`
+                  : 'Локальный режим сервера (без Google-облака)'}
+              </p>
+              <p className="text-[11px] text-[var(--svv-muted)] mt-0.5">
+                {isCloudAdmin
+                  ? 'Вещи, баннер, промокоды и колесо призов сохраняются в облаке и видны всем пользователям на всех устройствах.'
+                  : 'Сейчас изменения сохраняются только в текущем контейнере. Подключите Google-облако, чтобы вещи отображались везде.'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {!isCloudAdmin && (
+                <button
+                  type="button"
+                  onClick={onSignInGoogle}
+                  disabled={authBusy}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-full bg-[var(--svv-accent)] text-[var(--svv-accent-fg)] text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>{authBusy ? 'Вход...' : 'Подключить Google-облако'}</span>
+                </button>
+              )}
+              {isCloudAdmin && localOnlyProductCount > 0 && onSyncLocalToCloud && (
+                <button
+                  type="button"
+                  disabled={syncingToCloud}
+                  onClick={() => {
+                    setSyncingToCloud(true);
+                    void onSyncLocalToCloud().finally(() => setSyncingToCloud(false));
+                  }}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-full bg-[var(--svv-accent)] text-[var(--svv-accent-fg)] text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncingToCloud ? 'animate-spin' : ''}`} />
+                  <span>
+                    {syncingToCloud
+                      ? 'Перенос...'
+                      : `Перенести в облако (${localOnlyProductCount})`}
+                  </span>
+                </button>
+              )}
+              {adminBearerToken && (
+                <button
+                  type="button"
+                  onClick={onLockPasswordSession}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-full border border-[var(--svv-border-strong)] text-xs font-semibold text-[var(--svv-text)] inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Заблокировать</span>
+                </button>
+              )}
+              {isCloudAdmin && (
+                <button
+                  type="button"
+                  onClick={onSignOutGoogle}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-full border border-[var(--svv-border-strong)] text-xs font-semibold text-[var(--svv-text)] inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Выйти Google</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {adminBearerToken && (
-              <button
-                type="button"
-                onClick={onLockPasswordSession}
-                className="min-h-[38px] px-3.5 py-1.5 rounded-full border border-[var(--svv-border-strong)] text-xs font-semibold text-[var(--svv-text)] inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Заблокировать</span>
-              </button>
-            )}
-            {isCloudAdmin && (
-              <button
-                type="button"
-                onClick={onSignOutGoogle}
-                className="min-h-[38px] px-3.5 py-1.5 rounded-full border border-[var(--svv-border-strong)] text-xs font-semibold text-[var(--svv-text)] inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Выйти Google</span>
-              </button>
-            )}
-          </div>
+          {cloudAuthError && (
+            <p role="alert" className="text-xs text-[var(--svv-danger-fg)]">
+              {cloudAuthError}
+            </p>
+          )}
         </div>
       )}
 
@@ -940,6 +999,9 @@ export function AdminCatalogPanel({
                     placeholder="https://example.com/photo.jpg"
                     className="w-full min-h-[40px] px-3 py-1.5 rounded-xl bg-[var(--svv-surface)] border border-[var(--svv-border)] text-xs text-[var(--svv-text)] placeholder:text-[var(--svv-muted)] focus:outline-none focus:border-[var(--svv-border-strong)]"
                   />
+                  <p className="text-[10px] text-[var(--svv-muted)] mt-1">
+                    Для показа на всех устройствах и после перезапуска используйте ссылку https://...; локальный файл хранится только на текущем сервере.
+                  </p>
                 </div>
 
                 {uploadError && (
@@ -1012,17 +1074,11 @@ export function AdminCatalogPanel({
       {/* Hero Banner Editor Sub-Tab */}
       {canEdit && adminTab === 'banner' && (
         <div key="admin-banner" className="tab-view-enter space-y-4">
-          {!adminBearerToken ? (
-            <div className="p-4 rounded-2xl bg-[var(--svv-surface)] border border-[var(--svv-border)] text-xs text-[var(--svv-muted)]">
-              Для редактирования главного баннера выполните вход по паролю администратора.
-            </div>
-          ) : (
-            <AdminBannerEditor
-              bannerConfig={heroBanner}
-              adminBearerToken={adminBearerToken}
-              onSaveBanner={onSaveBanner}
-            />
-          )}
+          <AdminBannerEditor
+            bannerConfig={heroBanner}
+            adminBearerToken={adminBearerToken}
+            onSaveBanner={onSaveBanner}
+          />
         </div>
       )}
 
@@ -1161,35 +1217,23 @@ export function AdminCatalogPanel({
       {/* Promo Codes Sub-Tab */}
       {canEdit && adminTab === 'promos' && (
         <div key="admin-promos" className="tab-view-enter space-y-4">
-          {!adminBearerToken ? (
-            <div className="p-4 rounded-2xl bg-[var(--svv-surface)] border border-[var(--svv-border)] text-xs text-[var(--svv-muted)]">
-              Для создания и удаления промокодов на сервере выполните вход по паролю администратора.
-            </div>
-          ) : (
-            <AdminPromoManager
-              promos={adminPromos}
-              onCreatePromo={onCreatePromo}
-              onTogglePromo={onTogglePromo}
-              onDeletePromo={onDeletePromo}
-            />
-          )}
+          <AdminPromoManager
+            promos={adminPromos}
+            onCreatePromo={onCreatePromo}
+            onTogglePromo={onTogglePromo}
+            onDeletePromo={onDeletePromo}
+          />
         </div>
       )}
 
       {/* Prize Wheel Editor Sub-Tab */}
       {canEdit && adminTab === 'wheel' && (
         <div key="admin-wheel" className="tab-view-enter space-y-4">
-          {!adminBearerToken ? (
-            <div className="p-4 rounded-2xl bg-[var(--svv-surface)] border border-[var(--svv-border)] text-xs text-[var(--svv-muted)]">
-              Для сохранения настроек колеса призов на сервере выполните вход по паролю администратора.
-            </div>
-          ) : (
-            <AdminWheelEditor
-              wheelConfig={prizeWheel}
-              promos={adminPromos}
-              onSaveWheel={onSaveWheel}
-            />
-          )}
+          <AdminWheelEditor
+            wheelConfig={prizeWheel}
+            promos={adminPromos}
+            onSaveWheel={onSaveWheel}
+          />
         </div>
       )}
 

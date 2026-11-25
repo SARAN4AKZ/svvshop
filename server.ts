@@ -566,9 +566,8 @@ async function createApp() {
       return;
     }
     const ok =
-      mode === 'env'
-        ? verifyPasscodeAgainstEnv(password)
-        : verifyPasscodeAgainstClaimed(password);
+      verifyPasscodeAgainstEnv(password) ||
+      (mode === 'claimed' && verifyPasscodeAgainstClaimed(password));
     if (!ok) {
       res.status(401).json({ error: 'Неверный пароль администратора.' });
       return;
@@ -602,9 +601,8 @@ async function createApp() {
     }
 
     const currentValid =
-      mode === 'claimed'
-        ? verifyPasscodeAgainstClaimed(currentPassword)
-        : verifyPasscodeAgainstEnv(currentPassword);
+      verifyPasscodeAgainstEnv(currentPassword) ||
+      (mode === 'claimed' && verifyPasscodeAgainstClaimed(currentPassword));
     if (!currentValid) {
       res.status(401).json({ error: 'Текущий пароль указан неверно.' });
       return;

@@ -64,6 +64,74 @@ service cloud.firestore {
         data.updatedByUid is string && data.updatedByUid == request.auth.uid;
     }
 
+    function isValidSvvBanner(data) {
+      return data.keys().hasAll([
+          'eyebrow', 'title', 'subtitle', 'description',
+          'primaryCtaLabel', 'secondaryCtaLabel', 'promoMetricLabel', 'promoMetricValue',
+          'sealTop', 'sealBottom', 'tickerOverride', 'imageUrl',
+          'createdAt', 'updatedAt', 'updatedByUid'
+        ]) &&
+        data.keys().hasOnly([
+          'eyebrow', 'title', 'subtitle', 'description',
+          'primaryCtaLabel', 'secondaryCtaLabel', 'promoMetricLabel', 'promoMetricValue',
+          'sealTop', 'sealBottom', 'tickerOverride', 'imageUrl',
+          'createdAt', 'updatedAt', 'updatedByUid'
+        ]) &&
+        data.eyebrow is string && data.eyebrow.size() >= 1 && data.eyebrow.size() <= 80 &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 60 &&
+        data.subtitle is string && data.subtitle.size() >= 2 && data.subtitle.size() <= 140 &&
+        data.description is string && data.description.size() <= 320 &&
+        data.primaryCtaLabel is string && data.primaryCtaLabel.size() >= 2 && data.primaryCtaLabel.size() <= 40 &&
+        data.secondaryCtaLabel is string && data.secondaryCtaLabel.size() >= 2 && data.secondaryCtaLabel.size() <= 40 &&
+        data.promoMetricLabel is string && data.promoMetricLabel.size() >= 1 && data.promoMetricLabel.size() <= 40 &&
+        data.promoMetricValue is string && data.promoMetricValue.size() >= 1 && data.promoMetricValue.size() <= 40 &&
+        data.sealTop is string && data.sealTop.size() >= 1 && data.sealTop.size() <= 18 &&
+        data.sealBottom is string && data.sealBottom.size() >= 1 && data.sealBottom.size() <= 18 &&
+        data.tickerOverride is string && data.tickerOverride.size() <= 280 &&
+        data.imageUrl is string && data.imageUrl.size() <= 500 &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time &&
+        data.updatedByUid is string && data.updatedByUid == request.auth.uid;
+    }
+
+    function isValidSvvWheel(data) {
+      return data.keys().hasAll([
+          'enabled', 'title', 'subtitle', 'segments', 'createdAt', 'updatedAt', 'updatedByUid'
+        ]) &&
+        data.keys().hasOnly([
+          'enabled', 'title', 'subtitle', 'segments', 'createdAt', 'updatedAt', 'updatedByUid'
+        ]) &&
+        data.enabled is bool &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 80 &&
+        data.subtitle is string && data.subtitle.size() <= 200 &&
+        data.segments is list && data.segments.size() >= 2 && data.segments.size() <= 10 &&
+        data.segments[0] is map &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time &&
+        data.updatedByUid is string && data.updatedByUid == request.auth.uid;
+    }
+
+    function isValidSvvPromo(data, promoCode) {
+      return data.keys().hasAll([
+          'code', 'discountType', 'discountValue', 'minSubtotal', 'label', 'active',
+          'createdAt', 'updatedAt', 'updatedByUid'
+        ]) &&
+        data.keys().hasOnly([
+          'code', 'discountType', 'discountValue', 'minSubtotal', 'label', 'active',
+          'createdAt', 'updatedAt', 'updatedByUid'
+        ]) &&
+        data.code is string && data.code == promoCode &&
+        data.code.size() >= 3 && data.code.size() <= 24 && data.code.matches('^[A-Z0-9_\\-]+$') &&
+        data.discountType is string && (data.discountType == 'percent' || data.discountType == 'fixed') &&
+        data.discountValue is number && data.discountValue >= 1 && data.discountValue <= 500000 &&
+        data.minSubtotal is number && data.minSubtotal >= 0 && data.minSubtotal <= 10000000 &&
+        data.label is string && data.label.size() <= 120 &&
+        data.active is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time &&
+        data.updatedByUid is string && data.updatedByUid == request.auth.uid;
+    }
+
     match /svvProducts/{productId} {
       allow get: if isValidId(productId);
       allow list: if true;
@@ -73,6 +141,37 @@ service cloud.firestore {
         incoming().createdAt == existing().createdAt &&
         incoming().id == existing().id;
       allow delete: if isAdmin() && isValidId(productId);
+    }
+
+    match /svvBanner/{docId} {
+      allow get: if isValidId(docId) && docId == 'main';
+      allow list: if false;
+      allow create: if isAdmin() && isValidId(docId) && docId == 'main' &&
+        isValidSvvBanner(incoming()) && incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(docId) && docId == 'main' &&
+        isValidSvvBanner(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(docId) && docId == 'main';
+    }
+
+    match /svvWheel/{docId} {
+      allow get: if isValidId(docId) && docId == 'main';
+      allow list: if false;
+      allow create: if isAdmin() && isValidId(docId) && docId == 'main' &&
+        isValidSvvWheel(incoming()) && incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(docId) && docId == 'main' &&
+        isValidSvvWheel(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(docId) && docId == 'main';
+    }
+
+    match /svvPromos/{code} {
+      allow get: if isValidId(code);
+      allow list: if true;
+      allow create: if isAdmin() && isValidId(code) && isValidSvvPromo(incoming(), code) &&
+        incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidId(code) && isValidSvvPromo(incoming(), code) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().code == existing().code;
+      allow delete: if isAdmin() && isValidId(code);
     }
 
     match /admins/{uid} {

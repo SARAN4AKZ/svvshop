@@ -34,8 +34,16 @@ import {
 import {
   checkIsAdminUser,
   deleteProductFromFirestore,
+  deletePromoCodeFromFirestore,
+  saveHeroBannerToFirestore,
+  savePrizeWheelToFirestore,
   saveProductToFirestore,
+  savePromoCodeToFirestore,
   subscribeCatalogProducts,
+  subscribeHeroBanner,
+  subscribePrizeWheel,
+  subscribePromoCodes,
+  syncProductsBatchToFirestore,
 } from './services/catalogService';
 import { initTelegramMiniApp, triggerHaptic } from './utils/telegram';
 import { TopBar, type ActiveView } from './components/TopBar';
@@ -69,11 +77,11 @@ function mergeCatalogWithServerOverrides(
 ): LuxuryProduct[] {
   const deletedSet = new Set(deletedIds);
   const byId = new Map<string, LuxuryProduct>();
-  for (const item of baseList) {
-    if (!deletedSet.has(item.id)) byId.set(item.id, item);
-  }
   for (const item of upserts) {
     if (!deletedSet.has(item.id)) byId.set(item.id, item);
+  }
+  for (const item of baseList) {
+    byId.set(item.id, item);
   }
   return Array.from(byId.values()).sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
 }
@@ -144,8 +152,15 @@ export default function App() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [isCloudAdmin, setIsCloudAdmin] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
+  const [cloudAuthError, setCloudAuthError] = useState<string | null>(null);
   const [adminBearerToken, setAdminBearerToken] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<'env' | 'claimed' | 'unclaimed'>('unclaimed');
+
+  const localOnlyProducts = useMemo(() => {
+    const cloudIds = new Set(baseProducts.map((p) => p.id));
+    const deletedSet = new Set(serverDeletedIds);
+    return serverUpserts.filter((p) => !cloudIds.has(p.id) && !deletedSet.has(p.id));
+  }, [baseProducts, serverUpserts, serverDeletedIds]);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -270,17 +285,47 @@ export default function App() {
   }, [activeView]);
 
   useEffect(() => {
-    const unsubscribe = subscribeCatalogProducts(
-      (remoteList, remoteExists) => {
-        if (remoteExists) {
-          setBaseProducts(remoteList);
-        }
+    const unsubscribeProducts = subscribeCatalogProducts(
+      (remoteList) => {
+        setBaseProducts(remoteList);
       },
       () => {
         // Fallback to local state if Firestore rules/network unavailable
       }
     );
-    return unsubscribe;
+    const unsubscribeBanner = subscribeHeroBanner(
+      (remoteBanner) => {
+        setHeroBanner(remoteBanner);
+      },
+      () => {
+        // Fallback to server/default banner if unavailable
+      }
+    );
+    const unsubscribeWheel = subscribePrizeWheel(
+      (remoteWheel) => {
+        setPrizeWheel(remoteWheel);
+      },
+      () => {
+        // Fallback to server/default wheel if unavailable
+      }
+    );
+    const unsubscribePromos = subscribePromoCodes(
+      (remotePromos, hasRemoteData) => {
+        if (hasRemoteData) {
+          setAdminPromos(remotePromos);
+          setPromoCodes(remotePromos.filter((p) => p.active));
+        }
+      },
+      () => {
+        // Fallback to server/default promos if unavailable
+      }
+    );
+    return () => {
+      unsubscribeProducts();
+      unsubscribeBanner();
+      unsubscribeWheel();
+      unsubscribePromos();
+    };
   }, []);
 
   useEffect(() => {
@@ -290,6 +335,7 @@ export default function App() {
         setIsCloudAdmin(false);
         return;
       }
+      setCloudAuthError(null);
       const adminOk = await checkIsAdminUser(user.uid, user.email, user.emailVerified);
       setIsCloudAdmin(adminOk);
     });
@@ -414,17 +460,25 @@ export default function App() {
   };
 
   const handlePasswordClaimOrLogin = async (password: string, isClaim: boolean) => {
+    const parseAuthJson = async (response: globalThis.Response) => {
+      try {
+        return (await response.json()) as {
+          token?: string;
+          mode?: 'env' | 'claimed';
+          error?: string;
+        };
+      } catch {
+        return {};
+      }
+    };
+
     const endpoint = isClaim ? '/api/admin/claim' : '/api/admin/login';
     let res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),
     });
-    let data = (await res.json()) as {
-      token?: string;
-      mode?: 'env' | 'claimed';
-      error?: string;
-    };
+    let data = await parseAuthJson(res);
 
     if (res.status === 409) {
       const latestMode = await refreshAdminStatus();
@@ -434,11 +488,11 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password }),
         });
-        data = (await res.json()) as {
-          token?: string;
-          mode?: 'env' | 'claimed';
-          error?: string;
-        };
+        data = await parseAuthJson(res);
+      } else if (!isClaim && latestMode === 'unclaimed') {
+        throw new Error(
+          'Пароль на сервере сбросился или ещё не задан. Нажмите «Активировать пароль и войти», чтобы установить его.'
+        );
       }
     }
 
@@ -496,10 +550,31 @@ export default function App() {
 
   const handleSignInGoogle = async () => {
     setAuthBusy(true);
+    setCloudAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch {
-      showFeedback('Вход отменён');
+      showFeedback('Google-облако подключено');
+    } catch (err) {
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code ?? '')
+          : '';
+      if (code === 'auth/unauthorized-domain') {
+        const host = typeof window !== 'undefined' ? window.location.hostname : '';
+        setCloudAuthError(
+          `Домен ${host || 'сайта'} не добавлен в Firebase Console → Authentication → Settings → Authorized domains. Откройте админку в AI Studio для облачного входа или добавьте домен в Firebase.`
+        );
+      } else if (
+        code === 'auth/popup-blocked' ||
+        code === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        setCloudAuthError(
+          'Внутри Telegram или при блокировке всплывающих окон вход через Google недоступен. Откройте адрес магазина в обычном браузере (Chrome/Safari).'
+        );
+      } else {
+        setCloudAuthError('Вход через Google отменён или заблокирован браузером.');
+      }
+      showFeedback('Не удалось войти через Google');
     } finally {
       setAuthBusy(false);
     }
@@ -508,12 +583,31 @@ export default function App() {
   const handleSignOutGoogle = async () => {
     await signOut(auth);
     setIsCloudAdmin(false);
+    setCloudAuthError(null);
+  };
+
+  const handleSyncLocalCatalogToCloud = async () => {
+    if (!isCloudAdmin || !authUser || localOnlyProducts.length === 0) return;
+    const count = await syncProductsBatchToFirestore(localOnlyProducts, authUser.uid);
+    showFeedback(`Перенесено в облако: ${count}`);
   };
 
   const handleSaveProduct = async (product: LuxuryProduct, isNew: boolean) => {
     if (isCloudAdmin && authUser) {
       await saveProductToFirestore(product, authUser.uid, isNew);
-      showFeedback(isNew ? 'Вещь сохранена в облаке' : 'Изменения сохранены');
+      if (adminBearerToken) {
+        void fetch('/api/catalog', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminBearerToken}`,
+          },
+          body: JSON.stringify(product),
+        }).catch(() => {
+          // Non-fatal mirror to local server
+        });
+      }
+      showFeedback(isNew ? 'Вещь сохранена в облаке' : 'Изменения сохранены в облаке');
       return;
     }
     if (!adminBearerToken) {
@@ -537,13 +631,22 @@ export default function App() {
     }
     setServerDeletedIds((prev) => prev.filter((id) => id !== product.id));
     setServerUpserts((prev) => [product, ...prev.filter((p) => p.id !== product.id)]);
-    showFeedback(isNew ? 'Вещь добавлена в каталог' : 'Позиция обновлена');
+    showFeedback(isNew ? 'Вещь добавлена локально' : 'Позиция обновлена локально');
   };
 
   const handleDeleteProduct = async (productId: string) => {
     if (isCloudAdmin && authUser) {
       await deleteProductFromFirestore(productId);
-      showFeedback('Вещь удалена');
+      setServerUpserts((prev) => prev.filter((p) => p.id !== productId));
+      if (adminBearerToken) {
+        void fetch(`/api/catalog/${encodeURIComponent(productId)}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${adminBearerToken}` },
+        }).catch(() => {
+          // Non-fatal mirror
+        });
+      }
+      showFeedback('Вещь удалена из облака');
       return;
     }
     if (!adminBearerToken) {
@@ -573,6 +676,23 @@ export default function App() {
   };
 
   const handleCreatePromo = async (promo: PromoCodeItem) => {
+    if (isCloudAdmin && authUser) {
+      await savePromoCodeToFirestore(promo, authUser.uid);
+      if (adminBearerToken) {
+        void fetch('/api/promos', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminBearerToken}`,
+          },
+          body: JSON.stringify(promo),
+        }).catch(() => {
+          // Non-fatal mirror
+        });
+      }
+      showFeedback(`Промокод ${promo.code} сохранён в облаке`);
+      return;
+    }
     if (!adminBearerToken) {
       throw new Error('Сессия администратора истекла. Войдите снова.');
     }
@@ -597,6 +717,26 @@ export default function App() {
   };
 
   const handleTogglePromo = async (code: string, nextActive: boolean) => {
+    if (isCloudAdmin && authUser) {
+      const target = adminPromos.find((p) => p.code === code);
+      if (target) {
+        await savePromoCodeToFirestore({ ...target, active: nextActive }, authUser.uid);
+      }
+      if (adminBearerToken) {
+        void fetch(`/api/promos/${encodeURIComponent(code)}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminBearerToken}`,
+          },
+          body: JSON.stringify({ active: nextActive }),
+        }).catch(() => {
+          // Non-fatal mirror
+        });
+      }
+      showFeedback(nextActive ? `Промокод ${code} включён` : `Промокод ${code} отключён`);
+      return;
+    }
     if (!adminBearerToken) {
       showFeedback('Требуется вход администратора');
       return;
@@ -623,6 +763,19 @@ export default function App() {
   };
 
   const handleDeletePromo = async (code: string) => {
+    if (isCloudAdmin && authUser) {
+      await deletePromoCodeFromFirestore(code);
+      if (adminBearerToken) {
+        void fetch(`/api/promos/${encodeURIComponent(code)}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${adminBearerToken}` },
+        }).catch(() => {
+          // Non-fatal mirror
+        });
+      }
+      showFeedback(`Промокод ${code} удалён из облака`);
+      return;
+    }
     if (!adminBearerToken) {
       showFeedback('Требуется вход администратора');
       return;
@@ -644,6 +797,24 @@ export default function App() {
   };
 
   const handleSaveWheel = async (nextWheel: PrizeWheelConfig) => {
+    if (isCloudAdmin && authUser) {
+      await savePrizeWheelToFirestore(nextWheel, authUser.uid);
+      if (adminBearerToken) {
+        void fetch('/api/wheel', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminBearerToken}`,
+          },
+          body: JSON.stringify(nextWheel),
+        }).catch(() => {
+          // Non-fatal mirror
+        });
+      }
+      setPrizeWheel(nextWheel);
+      showFeedback('Колесо призов сохранено в облаке');
+      return;
+    }
     if (!adminBearerToken) {
       throw new Error('Сессия администратора истекла. Войдите снова.');
     }
@@ -668,6 +839,24 @@ export default function App() {
   };
 
   const handleSaveBanner = async (nextBanner: HeroBannerConfig) => {
+    if (isCloudAdmin && authUser) {
+      await saveHeroBannerToFirestore(nextBanner, authUser.uid);
+      if (adminBearerToken) {
+        void fetch('/api/banner', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminBearerToken}`,
+          },
+          body: JSON.stringify(nextBanner),
+        }).catch(() => {
+          // Non-fatal mirror
+        });
+      }
+      setHeroBanner(nextBanner);
+      showFeedback('Главный баннер сохранён в облаке');
+      return;
+    }
     if (!adminBearerToken) {
       throw new Error('Сессия администратора истекла. Войдите снова.');
     }
@@ -950,6 +1139,8 @@ export default function App() {
                   inboxSummary={inboxSummary}
                   userEmail={authUser?.email ?? null}
                   isCloudAdmin={isCloudAdmin}
+                  cloudAuthError={cloudAuthError}
+                  localOnlyProductCount={localOnlyProducts.length}
                   adminBearerToken={adminBearerToken}
                   authMode={authMode}
                   authBusy={authBusy}
@@ -959,6 +1150,7 @@ export default function App() {
                   onLockPasswordSession={handleLockPasswordSession}
                   onSignInGoogle={() => void handleSignInGoogle()}
                   onSignOutGoogle={() => void handleSignOutGoogle()}
+                  onSyncLocalToCloud={handleSyncLocalCatalogToCloud}
                   onSaveProduct={handleSaveProduct}
                   onDeleteProduct={handleDeleteProduct}
                   onSaveBanner={handleSaveBanner}

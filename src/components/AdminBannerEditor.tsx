@@ -5,7 +5,7 @@ import { validateHeroBannerInput } from '../utils/shopLogic';
 
 interface AdminBannerEditorProps {
   bannerConfig: HeroBannerConfig;
-  adminBearerToken: string;
+  adminBearerToken: string | null;
   onSaveBanner: (nextBanner: HeroBannerConfig) => Promise<void>;
 }
 
@@ -49,6 +49,11 @@ export function AdminBannerEditor({
   const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!adminBearerToken) {
+      setUploadError('Для загрузки файла с устройства введите пароль администратора или вставьте ссылку https://...');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     setUploadError(null);
     setUploadingImage(true);
     try {

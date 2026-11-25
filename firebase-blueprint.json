@@ -41,6 +41,95 @@
         "updatedByUid"
       ]
     },
+    "SvvBannerConfig": {
+      "title": "SvvBannerConfig",
+      "description": "Hero banner configuration for SVV SHOP.",
+      "type": "object",
+      "properties": {
+        "eyebrow": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "subtitle": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "description": { "type": "string", "maxLength": 320 },
+        "primaryCtaLabel": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "secondaryCtaLabel": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "promoMetricLabel": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "promoMetricValue": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "sealTop": { "type": "string", "minLength": 1, "maxLength": 18 },
+        "sealBottom": { "type": "string", "minLength": 1, "maxLength": 18 },
+        "tickerOverride": { "type": "string", "maxLength": 280 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": [
+        "eyebrow",
+        "title",
+        "subtitle",
+        "description",
+        "primaryCtaLabel",
+        "secondaryCtaLabel",
+        "promoMetricLabel",
+        "promoMetricValue",
+        "sealTop",
+        "sealBottom",
+        "tickerOverride",
+        "imageUrl",
+        "createdAt",
+        "updatedAt",
+        "updatedByUid"
+      ]
+    },
+    "SvvWheelConfig": {
+      "title": "SvvWheelConfig",
+      "description": "Prize wheel configuration and segments for SVV SHOP.",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "subtitle": { "type": "string", "maxLength": 200 },
+        "segments": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": [
+        "enabled",
+        "title",
+        "subtitle",
+        "segments",
+        "createdAt",
+        "updatedAt",
+        "updatedByUid"
+      ]
+    },
+    "SvvPromoCode": {
+      "title": "SvvPromoCode",
+      "description": "Promo code for checkout and prize wheel rewards.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 3, "maxLength": 24, "pattern": "^[A-Z0-9_\\-]+$" },
+        "discountType": { "type": "string", "enum": ["percent", "fixed"] },
+        "discountValue": { "type": "number" },
+        "minSubtotal": { "type": "number" },
+        "label": { "type": "string", "maxLength": 120 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": [
+        "code",
+        "discountType",
+        "discountValue",
+        "minSubtotal",
+        "label",
+        "active",
+        "createdAt",
+        "updatedAt",
+        "updatedByUid"
+      ]
+    },
     "AdminUser": {
       "title": "AdminUser",
       "description": "Explicit administrator record for SVV SHOP.",
@@ -56,6 +145,18 @@
     "/svvProducts/{productId}": {
       "schema": { "$ref": "#/entities/SvvProduct" },
       "description": "Luxury fashion items editable by admin and publicly readable by shoppers."
+    },
+    "/svvBanner/{docId}": {
+      "schema": { "$ref": "#/entities/SvvBannerConfig" },
+      "description": "Hero banner settings readable by shoppers and editable by admin."
+    },
+    "/svvWheel/{docId}": {
+      "schema": { "$ref": "#/entities/SvvWheelConfig" },
+      "description": "Prize wheel settings readable by shoppers and editable by admin."
+    },
+    "/svvPromos/{code}": {
+      "schema": { "$ref": "#/entities/SvvPromoCode" },
+      "description": "Promo codes readable by shoppers and managed by admin."
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/AdminUser" },
